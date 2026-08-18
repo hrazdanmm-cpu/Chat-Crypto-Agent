@@ -4,8 +4,8 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const { generateReply, generateReplyStream } = require('./lib/geminiService');
-const { buildMarketContext } = require('./lib/marketService');
+const { generateReply, generateReplyStream } = require('./geminiService');
+const { buildMarketContext } = require('./marketService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
