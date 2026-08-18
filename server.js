@@ -13,6 +13,11 @@ app.use(cors());
 app.use(express.json({ limit: '12mb' })); // generous limit to allow base64 image uploads
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Explicit root route so "Cannot GET /" never happens even if static index.html is missing/misconfigured
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // =============================================================================
 //  System prompt — embedded directly so there's no separate file to misplace.
 // =============================================================================
@@ -93,7 +98,7 @@ function detectCoinMentions(text) {
   const lower = ' ' + text.toLowerCase() + ' ';
   const found = new Set();
   for (const [key, id] of Object.entries(COIN_MAP)) {
-    const pattern = new RegExp(`[^a-z0-9]${key.replace(/\s/g, '\\s')}[^a-z0-9]`, 'i');
+    const pattern = new RegExp(`[^a-z0-9]$${key.replace(/\s/g, '\\s')}[^a-z0-9]`, 'i');
     if (pattern.test(lower)) found.add(id);
     if (found.size >= 3) break;
   }
@@ -102,7 +107,7 @@ function detectCoinMentions(text) {
 
 async function fetchJson(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Request to ${url} failed with ${res.status}`);
+  if (!res.ok) throw new Error(`Request to $${url} failed with ${res.status}`);
   return res.json();
 }
 
@@ -153,20 +158,36 @@ async function buildMarketContext(text) {
       const b = binance.status === 'fulfilled' ? binance.value : null;
       if (!g && !b) return null;
 
-      const lines = [`Coin: ${g ? g.name : symbol} (${symbol})`];
+      const lines = [`Coin: $${g ? g.name : symbol} ($${symbol})`];
       if (b) {
-        lines.push(`Live price (Binance, ${b.pair}): $${b.lastPrice}`);
-        lines.push(`24h change: ${b.priceChangePercent}%  |  24h high: $${b.highPrice}  |  24h low: $${b.lowPrice}`);
-        lines.push(`24h quote volume: $${Math.round(b.quoteVolume).toLocaleString('en-US')}`);
+        lines.push(`Live price (Binance, ${b.pair}): 
+
+$${b.lastPrice}`);
+        lines.push(`24h change: ${b.priceChangePercent}%  |  24h high: $$
+
+{b.highPrice}  |  24h low: 
+
+$${b.lowPrice}`);
+        lines.push(`24h quote volume: $$
+
+{Math.round(b.quoteVolume).toLocaleString('en-US')}`);
       } else if (g && g.priceUsd != null) {
-        lines.push(`Price (CoinGecko): $${g.priceUsd}  |  24h change: ${g.change24h}%`);
+        lines.push(`Price (CoinGecko): 
+
+$${g.priceUsd}  |  24h change: ${g.change24h}%`);
       }
       if (g) {
-        if (g.marketCapUsd) lines.push(`Market cap: $${Math.round(g.marketCapUsd).toLocaleString('en-US')} (rank #${g.marketCapRank ?? 'N/A'})`);
-        if (g.athUsd) lines.push(`All-time high: $${g.athUsd} on ${new Date(g.athDate).toISOString().slice(0, 10)}`);
-        if (g.atlUsd) lines.push(`All-time low: $${g.atlUsd} on ${new Date(g.atlDate).toISOString().slice(0, 10)}`);
+        if (g.marketCapUsd) lines.push(`Market cap: $$
+
+{Math.round(g.marketCapUsd).toLocaleString('en-US')} (rank #${g.marketCapRank ?? 'N/A'})`);
+        if (g.athUsd) lines.push(`All-time high: 
+
+$${g.athUsd} on ${new Date(g.athDate).toISOString().slice(0, 10)}`);
+        if (g.atlUsd) lines.push(`All-time low: $$
+
+{g.atlUsd} on ${new Date(g.atlDate).toISOString().slice(0, 10)}`);
         if (g.genesisDate) lines.push(`Launch date: ${g.genesisDate}`);
-        if (g.change7d != null) lines.push(`7d change: ${g.change7d.toFixed(2)}%  |  30d change: ${g.change30d != null ? g.change30d.toFixed(2) + '%' : 'N/A'}`);
+        if (g.change7d != null) lines.push(`7d change: $${g.change7d.toFixed(2)}%  |  30d change: $${g.change30d != null ? g.change30d.toFixed(2) + '%' : 'N/A'}`);
       }
       return lines.join('\n');
     })
@@ -199,7 +220,7 @@ function formatHistory(history) {
 function buildUserParts(message, marketContext, imageBase64) {
   const parts = [];
   if (imageBase64) {
-    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(imageBase64);
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$$/.exec(imageBase64);
     if (match) parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
   }
   const textPieces = [];
@@ -260,8 +281,8 @@ app.get('/api/stream', async (req, res) => {
     'X-Accel-Buffering': 'no',
   });
   const send = (event, data) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    res.write(`event: $${event}\n`);
+    res.write(`data: $${JSON.stringify(data)}\n\n`);
   };
 
   let closed = false;
@@ -285,5 +306,5 @@ app.get('/api/stream', async (req, res) => {
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
-  console.log(`Chat Crypto backend listening on port ${PORT}`);
+  console.log(`Chat Crypto backend listening on port $${PORT}`);
 });
