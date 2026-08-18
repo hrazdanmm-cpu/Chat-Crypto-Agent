@@ -1,0 +1,20 @@
+{
+  "name": "chat-crypto-backend",
+  "version": "1.0.0",
+  "description": "Backend for the Chat Crypto Telegram Mini App — Express + Gemini 1.5 Flash + CoinGecko/Binance market data.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
