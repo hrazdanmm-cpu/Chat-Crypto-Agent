@@ -12,7 +12,14 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '12mb' })); // generous limit to allow base64 image uploads
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files from the root directory (where index.html is located)
+app.use(express.static(__dirname));
+
+// Route for root URL to serve index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 function parseHistory(raw) {
   if (!raw) return [];
