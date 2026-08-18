@@ -1,89 +1,93 @@
 'use strict';
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+require('dotenv').config();
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const { generateReply, generateReplyStream } = require('./geminiService');
 
-// Ստանում ենք API Key-ը Environment Variables-ից
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Օգտագործում ենք ակտիվ gemini-1.5-flash մոդելը
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+app.use(cors());
+app.use(express.json({ limit: '12mb' }));
 
-/**
- * Non-streaming reply (օգտագործվում է նկարների կամ սովորական POST request-ների համար)
- */
-async function generateReply({ message, history = [], marketContext = '', imageBase64 }) {
-  const contents = [];
+app.use(express.static(__dirname));
 
-  // Ավելացնում ենք պատմությունը (history)
-  if (Array.isArray(history)) {
-    history.forEach((item) => {
-      if (item.role && item.parts) {
-        contents.push(item);
-      }
-    });
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+function parseHistory(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
   }
-
-  // Կազմում ենք նոր հաղորդագրության տեքստը
-  let promptText = message;
-  if (marketContext) {
-    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
-  }
-
-  const userParts = [{ text: promptText }];
-
-  // Եթե առկա է base64 նկար
-  if (imageBase64) {
-    const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
-    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
-    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    userParts.push({
-      inlineData: {
-        data: cleanBase64,
-        mimeType: mimeType,
-      },
-    });
-  }
-
-  contents.push({ role: 'user', parts: userParts });
-
-  const result = await model.generateContent({ contents });
-  const response = await result.response;
-  return response.text();
 }
 
-/**
- * Streaming reply (օգտագործվում է /api/stream endpoint-ի համար)
- */
-async *generateReplyStream({ message, history = [], marketContext = '' }) {
-  const contents = [];
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message = '', history, imageBase64, marketContext = '' } = req.body || {};
+    const reply = await generateReply({
+      message,
+      history: parseHistory(history),
+      marketContext,
+      imageBase64,
+    });
+    res.json({ reply });
+  } catch (err) {
+    console.error('[/api/chat] error:', err);
+    res.status(500).json({ error: 'Something went wrong generating a reply. Please try again.' });
+  }
+});
 
-  if (Array.isArray(history)) {
-    history.forEach((item) => {
-      if (item.role && item.parts) {
-        contents.push(item);
+app.get('/api/stream', async (req, res) => {
+  const message = typeof req.query.message === 'string' ? req.query.message : '';
+  const history = parseHistory(req.query.history);
+  const marketContext = typeof req.query.marketContext === 'string' ? req.query.marketContext : '';
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let closed = false;
+  req.on('close', () => { closed = true; });
+
+  try {
+    let full = '';
+    await generateReplyStream({ message, history, marketContext }, (chunk) => {
+      if (!closed) {
+        full += chunk;
+        send('delta', { text: chunk });
       }
     });
-  }
 
-  let promptText = message;
-  if (marketContext) {
-    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
-  }
-
-  contents.push({ role: 'user', parts: [{ text: promptText }] });
-
-  const resultStream = await model.generateContentStream({ contents });
-
-  for await (const chunk of resultStream.stream) {
-    const chunkText = chunk.text();
-    if (chunkText) {
-      yield chunkText;
+    if (!closed) {
+      send('done', { full });
+      res.end();
+    }
+  } catch (err) {
+    console.error('[/api/stream] error:', err);
+    if (!closed) {
+      send('error', { error: 'Connection error. Please try again.' });
+      res.end();
     }
   }
-}
+});
 
-module.exports = {
-  generateReply,
-  generateReplyStream,
-};
+app.get('/health', (req, res) => res.json({ ok: true }));
+
+app.listen(PORT, () => {
+  console.log(`Chat Crypto backend listening on port ${PORT}`);
+});
