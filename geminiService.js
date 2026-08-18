@@ -4,7 +4,30 @@ const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, '..', 'system_prompt.txt'), 'utf8');
+// Try several likely locations for system_prompt.txt so this still works even
+// if the deployed folder layout differs slightly from the original (e.g. a
+// flat repo without the lib/ subfolder, or a different Render root directory).
+function loadSystemPrompt() {
+  const candidates = [
+    path.join(__dirname, '..', 'system_prompt.txt'),          // lib/../system_prompt.txt (expected layout)
+    path.join(__dirname, 'system_prompt.txt'),                 // same folder as this file
+    path.join(process.cwd(), 'system_prompt.txt'),              // project working directory
+    path.join(process.cwd(), 'src', 'system_prompt.txt'),       // Render root dir set to "src"
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    } catch (e) { /* keep trying */ }
+  }
+  console.error(
+    'system_prompt.txt not found. Looked in:\n' + candidates.map((p) => '  - ' + p).join('\n') +
+    '\nMake sure system_prompt.txt is committed to your repo alongside server.js.'
+  );
+  // Fall back to a minimal inline prompt so the server can still boot.
+  return 'You are Chat Crypto, a crypto market analyst assistant created by Artur. Reply in the same language the user writes in. Focus strictly on crypto/finance topics. Always include a brief "not financial advice" disclaimer for analysis-style answers.';
+}
+
+const SYSTEM_PROMPT = loadSystemPrompt();
 
 let genAI = null;
 function getClient() {
