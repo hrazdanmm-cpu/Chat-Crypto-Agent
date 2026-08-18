@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, '..', 'system_prompt.txt'), 'utf8');
+const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'system_prompt.txt'), 'utf8');
 
 let genAI = null;
 function getClient() {
