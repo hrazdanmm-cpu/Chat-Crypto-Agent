@@ -4,15 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Try several likely locations for system_prompt.txt so this still works even
-// if the deployed folder layout differs slightly from the original (e.g. a
-// flat repo without the lib/ subfolder, or a different Render root directory).
 function loadSystemPrompt() {
   const candidates = [
-    path.join(__dirname, '..', 'system_prompt.txt'),          // lib/../system_prompt.txt (expected layout)
-    path.join(__dirname, 'system_prompt.txt'),                 // same folder as this file
-    path.join(process.cwd(), 'system_prompt.txt'),              // project working directory
-    path.join(process.cwd(), 'src', 'system_prompt.txt'),       // Render root dir set to "src"
+    path.join(__dirname, 'system_prompt.txt'),                 // same folder as this file (root)
+    path.join(__dirname, '..', 'system_prompt.txt'),
+    path.join(process.cwd(), 'system_prompt.txt'),
+    path.join(process.cwd(), 'src', 'system_prompt.txt'),
   ];
   for (const p of candidates) {
     try {
@@ -23,7 +20,6 @@ function loadSystemPrompt() {
     'system_prompt.txt not found. Looked in:\n' + candidates.map((p) => '  - ' + p).join('\n') +
     '\nMake sure system_prompt.txt is committed to your repo alongside server.js.'
   );
-  // Fall back to a minimal inline prompt so the server can still boot.
   return 'You are Chat Crypto, a crypto market analyst assistant created by Artur. Reply in the same language the user writes in. Focus strictly on crypto/finance topics. Always include a brief "not financial advice" disclaimer for analysis-style answers.';
 }
 
@@ -47,7 +43,6 @@ function getModel() {
   });
 }
 
-// Convert our simple {role: 'user'|'model', text} history into Gemini's chat format.
 function formatHistory(history) {
   if (!Array.isArray(history)) return [];
   return history
@@ -73,9 +68,6 @@ function buildUserParts(message, marketContext, imageBase64) {
   return parts;
 }
 
-/**
- * Non-streaming reply — used for the image-attachment flow (POST /api/chat).
- */
 async function generateReply({ message, history, marketContext, imageBase64 }) {
   const model = getModel();
   const chat = model.startChat({ history: formatHistory(history) });
@@ -83,10 +75,6 @@ async function generateReply({ message, history, marketContext, imageBase64 }) {
   return result.response.text();
 }
 
-/**
- * Streaming reply — used for GET /api/stream (SSE). Returns an async iterator
- * of text chunks; caller is responsible for writing SSE frames.
- */
 async function* generateReplyStream({ message, history, marketContext }) {
   const model = getModel();
   const chat = model.startChat({ history: formatHistory(history) });
