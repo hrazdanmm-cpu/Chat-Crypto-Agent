@@ -186,7 +186,7 @@ function getModel() {
     if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set. Add it in your Render environment variables.');
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
-  return genAI.getGenerativeModel({ model: 'gemini-1.5-flash', systemInstruction: SYSTEM_PROMPT });
+  return genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: SYSTEM_PROMPT });
 }
 
 function formatHistory(history) {
