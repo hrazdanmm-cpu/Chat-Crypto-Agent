@@ -13,9 +13,9 @@
   applyLogo();
 
   // ---- Element refs ----
-  const scrollArea   = document.getElementById('scrollArea');
-  const welcome      = document.getElementById('welcome');
-  const messagesEl   = document.getElementById('messages');
+  const scrollArea    = document.getElementById('scrollArea');
+  const welcome       = document.getElementById('welcome');
+  const messagesEl    = document.getElementById('messages');
   const input         = document.getElementById('input');
   const sendBtn        = document.getElementById('sendBtn');
   const sendIcon       = document.getElementById('sendIcon');
@@ -36,7 +36,7 @@
   let chatHistory = [];      // [{role:'user'|'model', text:'...'}]
   let pendingImageBase64 = null;
   let isStreaming = false;
-  let currentAbortController = null;
+  let currentEventSource = null;
 
   // ---- Sidebar open/close ----
   function openSidebar() {
@@ -176,7 +176,7 @@
   function sendMessage() {
     if (isStreaming) {
       // Acting as Stop
-      if (currentAbortController) currentAbortController.abort();
+      if (currentEventSource) currentEventSource.close();
       setSendingState(false);
       removeTyping();
       return;
@@ -202,54 +202,49 @@
 
   if (sendBtn) sendBtn.addEventListener('click', sendMessage);
 
-  // ---- Talk to backend (streaming via /api/stream) ----
+  // ---- Talk to backend (streaming via GET /api/stream with SSE) ----
   function streamFromServer(message, imageBase64) {
-    currentAbortController = new AbortController();
-
-    fetch('/api/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: message,
-        history: chatHistory.slice(0, -1), // history before this message
-        image: imageBase64 || null
-      }),
-      signal: currentAbortController.signal
-    })
-    .then(function (response) {
-      if (!response.ok || !response.body) {
-        throw new Error('Network response was not ok');
-      }
+    // Image uploads aren't supported by the GET-based SSE stream endpoint,
+    // so if there's an image, go straight to the non-streaming /api/chat.
+    if (imageBase64) {
       removeTyping();
-      const bubble = renderMessage('model', '', true);
-      let fullText = '';
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      function read() {
-        return reader.read().then(function (result) {
-          if (result.done) {
-            bubble.classList.remove('stream-cursor');
-            chatHistory.push({ role: 'model', text: fullText });
-            setSendingState(false);
-            return;
-          }
-          const chunk = decoder.decode(result.value, { stream: true });
-          fullText += chunk;
-          bubble.innerHTML = escapeHtml(fullText);
-          scrollArea.scrollTop = scrollArea.scrollHeight;
-          return read();
-        });
-      }
-      return read();
-    })
-    .catch(function (err) {
-      removeTyping();
-      setSendingState(false);
-      if (err.name === 'AbortError') return;
-      // Fallback to non-streaming endpoint if /api/stream fails
       fallbackToChatEndpoint(message, imageBase64);
+      return;
+    }
+
+    removeTyping();
+    const bubble = renderMessage('model', '', true);
+    let fullText = '';
+
+    const params = new URLSearchParams({
+      message: message,
+      history: JSON.stringify(chatHistory.slice(0, -1))
+    });
+    const es = new EventSource('/api/stream?' + params.toString());
+    currentEventSource = es;
+
+    es.addEventListener('delta', function (e) {
+      const data = JSON.parse(e.data);
+      fullText += data.text;
+      bubble.innerHTML = escapeHtml(fullText);
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    });
+
+    es.addEventListener('done', function () {
+      bubble.classList.remove('stream-cursor');
+      chatHistory.push({ role: 'model', text: fullText });
+      setSendingState(false);
+      es.close();
+    });
+
+    es.addEventListener('error', function () {
+      bubble.classList.remove('stream-cursor');
+      setSendingState(false);
+      es.close();
+      if (!fullText) {
+        bubble.remove();
+        fallbackToChatEndpoint(message, imageBase64);
+      }
     });
   }
 
@@ -263,14 +258,14 @@
       body: JSON.stringify({
         message: message,
         history: chatHistory.slice(0, -1),
-        image: imageBase64 || null
+        imageBase64: imageBase64 || null
       })
     })
     .then(function (res) { return res.json(); })
     .then(function (data) {
       removeTyping();
       setSendingState(false);
-      const reply = data.reply || data.text || data.message || 'Sorry, no response.';
+      const reply = data.reply || 'Sorry, no response.';
       renderMessage('model', reply);
       chatHistory.push({ role: 'model', text: reply });
     })
