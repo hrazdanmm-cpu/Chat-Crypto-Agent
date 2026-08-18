@@ -1,103 +1,89 @@
 'use strict';
 
-require('dotenv').config();
-const path = require('path');
-const express = require('express');
-const cors = require('cors');
-const { generateReply, generateReplyStream } = require('./geminiService');
-const { buildMarketContext } = require('./marketService');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Ստանում ենք API Key-ը Environment Variables-ից
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-app.use(cors());
-app.use(express.json({ limit: '12mb' })); // generous limit to allow base64 image uploads
+// Օգտագործում ենք ակտիվ gemini-1.5-flash մոդելը
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-// Serve static files from the root directory (where index.html is located)
-app.use(express.static(__dirname));
+/**
+ * Non-streaming reply (օգտագործվում է նկարների կամ սովորական POST request-ների համար)
+ */
+async function generateReply({ message, history = [], marketContext = '', imageBase64 }) {
+  const contents = [];
 
-// Route for root URL to serve index.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+  // Ավելացնում ենք պատմությունը (history)
+  if (Array.isArray(history)) {
+    history.forEach((item) => {
+      if (item.role && item.parts) {
+        contents.push(item);
+      }
+    });
+  }
 
-function parseHistory(raw) {
-  if (!raw) return [];
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    return [];
+  // Կազմում ենք նոր հաղորդագրության տեքստը
+  let promptText = message;
+  if (marketContext) {
+    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
+  }
+
+  const userParts = [{ text: promptText }];
+
+  // Եթե առկա է base64 նկար
+  if (imageBase64) {
+    const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+    userParts.push({
+      inlineData: {
+        data: cleanBase64,
+        mimeType: mimeType,
+      },
+    });
+  }
+
+  contents.push({ role: 'user', parts: userParts });
+
+  const result = await model.generateContent({ contents });
+  const response = await result.response;
+  return response.text();
+}
+
+/**
+ * Streaming reply (օգտագործվում է /api/stream endpoint-ի համար)
+ */
+async *generateReplyStream({ message, history = [], marketContext = '' }) {
+  const contents = [];
+
+  if (Array.isArray(history)) {
+    history.forEach((item) => {
+      if (item.role && item.parts) {
+        contents.push(item);
+      }
+    });
+  }
+
+  let promptText = message;
+  if (marketContext) {
+    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
+  }
+
+  contents.push({ role: 'user', parts: [{ text: promptText }] });
+
+  const resultStream = await model.generateContentStream({ contents });
+
+  for await (const chunk of resultStream.stream) {
+    const chunkText = chunk.text();
+    if (chunkText) {
+      yield chunkText;
+    }
   }
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/chat — non-streaming. Used by the frontend whenever an image is
-// attached (images can't be sent over a GET/EventSource request).
-// ---------------------------------------------------------------------------
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { message = '', history, imageBase64 } = req.body || {};
-    const marketContext = await buildMarketContext(message).catch(() => '');
-    const reply = await generateReply({
-      message,
-      history: parseHistory(history),
-      marketContext,
-      imageBase64,
-    });
-    res.json({ reply });
-  } catch (err) {
-    console.error('[/api/chat] error:', err);
-    res.status(500).json({ error: 'Something went wrong generating a reply. Please try again.' });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/stream — Server-Sent Events. Used for normal text-only messages so
-// the frontend can render the reply as it's generated.
-// ---------------------------------------------------------------------------
-app.get('/api/stream', async (req, res) => {
-  const message = typeof req.query.message === 'string' ? req.query.message : '';
-  const history = parseHistory(req.query.history);
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
-  const send = (event, data) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  let closed = false;
-  req.on('close', () => { closed = true; });
-
-  try {
-    const marketContext = await buildMarketContext(message).catch(() => '');
-    let full = '';
-    for await (const chunk of generateReplyStream({ message, history, marketContext })) {
-      if (closed) break;
-      full += chunk;
-      send('delta', { text: chunk });
-    }
-    if (!closed) {
-      send('done', { full });
-      res.end();
-    }
-  } catch (err) {
-    console.error('[/api/stream] error:', err);
-    if (!closed) {
-      send('error', { error: 'Connection error. Please try again.' });
-      res.end();
-    }
-  }
-});
-
-app.get('/health', (req, res) => res.json({ ok: true }));
-
-app.listen(PORT, () => {
-  console.log(`Chat Crypto backend listening on port ${PORT}`);
-});
+module.exports = {
+  generateReply,
+  generateReplyStream,
+};
