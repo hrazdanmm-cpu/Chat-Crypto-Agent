@@ -1,79 +1,77 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, '..', 'system_prompt.txt'), 'utf8');
 
-// Փոխված է gemini-2.5-flash կամ gemini-1.5-flash-latest
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-async function generateReply({ message, history = [], marketContext = '', imageBase64 }) {
-  const contents = [];
-
-  if (Array.isArray(history)) {
-    history.forEach((item) => {
-      if (item.role && item.parts) {
-        contents.push(item);
-      }
-    });
+let genAI = null;
+function getClient() {
+  if (!genAI) {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not set. Add it to your .env file.');
+    }
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   }
-
-  let promptText = message;
-  if (marketContext) {
-    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
-  }
-
-  const userParts = [{ text: promptText }];
-
-  if (imageBase64) {
-    const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
-    const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
-    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-    userParts.push({
-      inlineData: {
-        data: cleanBase64,
-        mimeType: mimeType,
-      },
-    });
-  }
-
-  contents.push({ role: 'user', parts: userParts });
-
-  const result = await model.generateContent({ contents });
-  const response = await result.response;
-  return response.text();
+  return genAI;
 }
 
-async *generateReplyStream({ message, history = [], marketContext = '' }) {
-  const contents = [];
+function getModel() {
+  return getClient().getGenerativeModel({
+    model: 'gemini-1.5-flash',
+    systemInstruction: SYSTEM_PROMPT,
+  });
+}
 
-  if (Array.isArray(history)) {
-    history.forEach((item) => {
-      if (item.role && item.parts) {
-        contents.push(item);
-      }
-    });
-  }
+// Convert our simple {role: 'user'|'model', text} history into Gemini's chat format.
+function formatHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((m) => m && m.text)
+    .map((m) => ({
+      role: m.role === 'model' ? 'model' : 'user',
+      parts: [{ text: m.text }],
+    }));
+}
 
-  let promptText = message;
-  if (marketContext) {
-    promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
-  }
-
-  contents.push({ role: 'user', parts: [{ text: promptText }] });
-
-  const resultStream = await model.generateContentStream({ contents });
-
-  for await (const chunk of resultStream.stream) {
-    const chunkText = chunk.text();
-    if (chunkText) {
-      yield chunkText;
+function buildUserParts(message, marketContext, imageBase64) {
+  const parts = [];
+  if (imageBase64) {
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(imageBase64);
+    if (match) {
+      parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
     }
   }
+  const textPieces = [];
+  if (marketContext) textPieces.push(marketContext);
+  textPieces.push(message || (imageBase64 ? 'Please analyze this image.' : ''));
+  parts.push({ text: textPieces.join('\n\n') });
+  return parts;
 }
 
-module.exports = {
-  generateReply,
-  generateReplyStream,
-};
+/**
+ * Non-streaming reply — used for the image-attachment flow (POST /api/chat).
+ */
+async function generateReply({ message, history, marketContext, imageBase64 }) {
+  const model = getModel();
+  const chat = model.startChat({ history: formatHistory(history) });
+  const result = await chat.sendMessage(buildUserParts(message, marketContext, imageBase64));
+  return result.response.text();
+}
+
+/**
+ * Streaming reply — used for GET /api/stream (SSE). Returns an async iterator
+ * of text chunks; caller is responsible for writing SSE frames.
+ */
+async function* generateReplyStream({ message, history, marketContext }) {
+  const model = getModel();
+  const chat = model.startChat({ history: formatHistory(history) });
+  const result = await chat.sendMessageStream(buildUserParts(message, marketContext, null));
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+module.exports = { generateReply, generateReplyStream };
