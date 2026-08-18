@@ -2,19 +2,14 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Ստանում ենք API Key-ը Environment Variables-ից
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Օգտագործում ենք ակտիվ gemini-1.5-flash մոդելը
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+// Փոխված է gemini-2.5-flash կամ gemini-1.5-flash-latest
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-/**
- * Non-streaming reply (օգտագործվում է նկարների կամ սովորական POST request-ների համար)
- */
 async function generateReply({ message, history = [], marketContext = '', imageBase64 }) {
   const contents = [];
 
-  // Ավելացնում ենք պատմությունը (history)
   if (Array.isArray(history)) {
     history.forEach((item) => {
       if (item.role && item.parts) {
@@ -23,7 +18,6 @@ async function generateReply({ message, history = [], marketContext = '', imageB
     });
   }
 
-  // Կազմում ենք նոր հաղորդագրության տեքստը
   let promptText = message;
   if (marketContext) {
     promptText = `[Market Data Context:\n${marketContext}]\n\nUser Question: ${message}`;
@@ -31,7 +25,6 @@ async function generateReply({ message, history = [], marketContext = '', imageB
 
   const userParts = [{ text: promptText }];
 
-  // Եթե առկա է base64 նկար
   if (imageBase64) {
     const mimeTypeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/jpeg';
@@ -52,9 +45,6 @@ async function generateReply({ message, history = [], marketContext = '', imageB
   return response.text();
 }
 
-/**
- * Streaming reply (օգտագործվում է /api/stream endpoint-ի համար)
- */
 async *generateReplyStream({ message, history = [], marketContext = '' }) {
   const contents = [];
 
