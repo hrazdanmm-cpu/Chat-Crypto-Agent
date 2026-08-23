@@ -70,8 +70,8 @@ function writeSse(res, token) { res.write(`data: ${JSON.stringify({ token })}\n\
 
 app.get('/api/health', (_, res) => res.json({ ok: true, geminiConfigured: Boolean(process.env.GEMINI_API_KEY) }));
 app.get('/api/config', (_, res) => res.json({ futuresCalculatorUrl: process.env.FUTURES_CALCULATOR_URL || 'https://t.me/Block_News_Crypto_bot' }));
-app.get('/api/coins', async (_, res) => {
-  try { res.json(await binanceTickers()); }
+app.get('/api/coins', async (req, res) => {
+  try { const list = await binanceTickers(); res.json(req.query.sort === 'gainers' ? [...list].sort((a, b) => b.change24h - a.change24h) : list); }
   catch (error) { res.status(502).json({ error: 'Unable to load Binance market list' }); }
 });
 app.post('/api/chat', async (req, res) => {
