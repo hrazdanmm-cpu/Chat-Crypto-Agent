@@ -1,109 +1,425 @@
-import 'dotenv/config';
-import express from 'express';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { GoogleGenAI } from '@google/genai';
+// ============================================================================
+//  Chat Crypto — Backend (Node.js / Express)
+//  Ագենտի 5 խելացի ֆունկցիաներով (Claude tool-use) + Binance շուկայի տվյալներ
+// ============================================================================
+'use strict';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const express = require('express');
+const cors = require('cors');
+
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
-const BINANCE = 'https://api.binance.com';
-const COINGECKO = 'https://api.coingecko.com/api/v3';
+app.use(cors());
+app.use(express.json({ limit: '8mb' }));
+app.use(express.static('public')); // index.html և assets/ դնել այս թղթապանակում
+
+const PORT = process.env.PORT || 3000;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+const FUTURES_CALCULATOR_URL =
+  process.env.FUTURES_CALCULATOR_URL || 'https://t.me/Block_News_Crypto_bot';
+const BINANCE_BASE = 'https://api.binance.com';
+
+// ---------------------------------------------------------------------------
+// Փոքր in-memory քեշ (Binance-ի ավելորդ հարցումներից խուսափելու համար)
+// ---------------------------------------------------------------------------
 const cache = new Map();
-const ttl = (key, ms, getter) => {
-  const saved = cache.get(key);
-  if (saved && Date.now() - saved.at < ms) return saved.value;
-  return getter().then(value => (cache.set(key, { at: Date.now(), value }), value));
-};
+async function cached(key, ttlMs, fn) {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+  const value = await fn();
+  cache.set(key, { value, at: Date.now() });
+  return value;
+}
 
-app.use(express.json({ limit: '6mb' }));
-app.use(express.static(__dirname, { index: 'index.html' }));
-
-const json = async url => {
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return response.json();
-};
-const symbolFrom = text => {
-  const match = String(text).toUpperCase().match(/\b(BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|TON|LINK|SUI|APT|DOT|TRX|LTC|ATOM|NEAR|OP|ARB|PEPE|SHIB|FET|AAVE|UNI|MATIC|POL)\b/);
-  return match?.[1] || null;
-};
-const fmt = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: value < 1 ? 6 : 2 });
-
-async function binanceTickers() {
-  return ttl('tickers', 25_000, async () => {
-    const all = await json(`${BINANCE}/api/v3/ticker/24hr`);
-    return all.filter(x => x.symbol.endsWith('USDT') && Number(x.lastPrice) > 0)
-      .map(x => ({ symbol: x.symbol.slice(0, -4), pair: x.symbol, name: x.symbol.slice(0, -4), price: Number(x.lastPrice), change24h: Number(x.priceChangePercent), volume: Number(x.quoteVolume) }))
-      .sort((a, b) => b.volume - a.volume);
+// ---------------------------------------------------------------------------
+// Binance helper-ներ
+// ---------------------------------------------------------------------------
+async function fetchAllTickers() {
+  return cached('tickers24h', 15_000, async () => {
+    const r = await fetch(`${BINANCE_BASE}/api/v3/ticker/24hr`);
+    if (!r.ok) throw new Error('Binance ticker error ' + r.status);
+    const data = await r.json();
+    return data
+      .filter((x) => x.symbol.endsWith('USDT') && Number(x.lastPrice) > 0)
+      .map((x) => ({
+        symbol: x.symbol.slice(0, -4),
+        name: x.symbol.slice(0, -4),
+        price: Number(x.lastPrice),
+        change24h: Number(x.priceChangePercent),
+        high24h: Number(x.highPrice),
+        low24h: Number(x.lowPrice),
+        volume: Number(x.quoteVolume),
+      }));
   });
 }
-async function marketData(symbol) {
-  const pair = `${symbol}USDT`;
-  const [ticker, klines] = await Promise.all([
-    json(`${BINANCE}/api/v3/ticker/24hr?symbol=${pair}`),
-    json(`${BINANCE}/api/v3/klines?symbol=${pair}&interval=4h&limit=100`)
-  ]);
-  const closes = klines.map(k => Number(k[4]));
-  const highs = klines.map(k => Number(k[2]));
-  const lows = klines.map(k => Number(k[3]));
-  const last = closes.at(-1), average = closes.reduce((a, b) => a + b, 0) / closes.length;
-  const support = Math.min(...lows.slice(-30)), resistance = Math.max(...highs.slice(-30));
-  const rsi = calculateRsi(closes, 14);
-  return { symbol, price: Number(ticker.lastPrice), change24h: Number(ticker.priceChangePercent), high24h: Number(ticker.highPrice), low24h: Number(ticker.lowPrice), volume: Number(ticker.quoteVolume), support, resistance, rsi, trend: last >= average ? 'bullish / above 100×4h average' : 'bearish / below 100×4h average' };
-}
-function calculateRsi(prices, period) {
-  const changes = prices.slice(-period - 1).slice(1).map((p, i) => p - prices.slice(-period - 1)[i]);
-  const gain = changes.reduce((sum, n) => sum + Math.max(n, 0), 0) / period;
-  const loss = changes.reduce((sum, n) => sum + Math.max(-n, 0), 0) / period;
-  return loss === 0 ? 100 : Math.round((100 - 100 / (1 + gain / loss)) * 10) / 10;
-}
-function localAnalysis(data, language) {
-  const bullish = data.price > (data.support + data.resistance) / 2 && data.rsi < 70;
-  const direction = bullish ? 'վերականգնման/աճի' : 'անկման կամ տատանման';
-  if (language === 'ru') return `${data.symbol}: $${fmt(data.price)} (${data.change24h >= 0 ? '+' : ''}${data.change24h.toFixed(2)}% за 24ч)\n\nТехническая сводка: RSI(14) ${data.rsi}; тренд ${data.trend}; поддержка около $${fmt(data.support)}, сопротивление около $${fmt(data.resistance)}.\n\nСценарий: текущие данные склоняются к ${bullish ? 'осторожно позитивному' : 'осторожно негативному/нейтральному'} сценарию, но это не гарантия. Закрепление выше сопротивления при объёме усиливает бычий тезис; уход ниже поддержки его отменяет.\n\nНе финансовый совет.`;
-  if (language === 'en') return `${data.symbol}: $${fmt(data.price)} (${data.change24h >= 0 ? '+' : ''}${data.change24h.toFixed(2)}% in 24h)\n\nTechnical snapshot: RSI(14) ${data.rsi}; trend ${data.trend}; support near $${fmt(data.support)}, resistance near $${fmt(data.resistance)}.\n\nScenario: current data lean ${bullish ? 'cautiously constructive' : 'cautiously bearish/neutral'}, not guaranteed. A volume-backed close above resistance strengthens the bullish case; a loss of support invalidates it.\n\nNot financial advice.`;
-  return `${data.symbol}՝ $${fmt(data.price)} (${data.change24h >= 0 ? '+' : ''}${data.change24h.toFixed(2)}%՝ 24 ժամում)\n\nՏեխնիկական ամփոփում՝ RSI(14)՝ ${data.rsi}, թրենդ՝ ${data.trend}, աջակցություն՝ մոտ $${fmt(data.support)}, դիմադրություն՝ մոտ $${fmt(data.resistance)}։\n\nՀավանականային սցենար՝ ներկա տվյալները ավելի շատ հուշում են ${direction} սցենար, բայց դա երաշխիք չէ։ Դիմադրությունից վեր՝ ծավալով փակվելը ուժեղացնում է աճի վարկածը, իսկ աջակցությունից ցածր գնալը այն չեղարկում է։\n\nՍա կրթական վերլուծություն է, ոչ ֆինանսական խորհուրդ։`;
-}
-const system = `You are Chat Crypto, an Armenian-created crypto-market analyst. Creator: Artur. You are crypto-only; politely redirect unrelated questions. Reply in the user's language; if Armenian Latin transliteration is used, reply Armenian script. Use supplied live market data exactly and never invent prices. Explain bullish, bearish, and neutral scenarios as probabilities, never as a guarantee or personal investment instruction. Include concise history/context, support/resistance, technical and market factors, risks, invalidation, and Not Financial Advice. Do not claim a coin will definitely rise or fall.`;
-function writeSse(res, token) { res.write(`data: ${JSON.stringify({ token })}\n\n`); }
 
-app.get('/api/health', (_, res) => res.json({ ok: true, geminiConfigured: Boolean(process.env.GEMINI_API_KEY) }));
-app.get('/api/config', (_, res) => res.json({ futuresCalculatorUrl: process.env.FUTURES_CALCULATOR_URL || 'https://t.me/Block_News_Crypto_bot' }));
-app.get('/api/coins', async (req, res) => {
-  try { const list = await binanceTickers(); res.json(req.query.sort === 'gainers' ? [...list].sort((a, b) => b.change24h - a.change24h) : list); }
-  catch (error) { res.status(502).json({ error: 'Unable to load Binance market list' }); }
-});
-app.post('/api/chat', async (req, res) => {
-  const { message = '', language = 'hy', history = [], image } = req.body || {};
-  if (!String(message).trim()) return res.status(400).json({ error: 'message is required' });
-  res.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-  res.flushHeaders();
-  const symbol = symbolFrom(message);
-  let data = null;
-  try { if (symbol) data = await marketData(symbol); } catch { /* AI can still answer without a quote. */ }
-  const marketContext = data ? `LIVE BINANCE DATA (timestamp ${new Date().toISOString()}):\n${JSON.stringify(data)}` : 'No specific Binance symbol detected. Ask the user which cryptocurrency or ticker they want analyzed.';
-  const calculatorUrl = process.env.FUTURES_CALCULATOR_URL || 'https://t.me/Block_News_Crypto_bot';
-  const userQuestionCount = history.filter(x => x.role === 'user').length;
-  const calculatorHint = userQuestionCount > 0 && userQuestionCount % 5 === 0
-    ? `\n\n🧮 Futures Calculator Mini App խորհուրդ՝ դիրքի չափի, liquidation price-ի, R:R-ի և funding-ի հաշվարկի համար՝ ${calculatorUrl}` : '';
-  try {
-    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const parts = [{ text: `${system}\n\n${marketContext}\n\nUser: ${message}` }];
-    if (typeof image === 'string' && image.startsWith('data:image/')) {
-      const [meta, encoded] = image.split(',');
-      parts.push({ inlineData: { mimeType: meta.match(/data:(.*?);/)?.[1] || 'image/png', data: encoded } });
-    }
-    const stream = await ai.models.generateContentStream({ model: process.env.GEMINI_MODEL || 'gemini-3.7-flash', contents: [{ role: 'user', parts }] });
-    for await (const chunk of stream) writeSse(res, chunk.text || '');
-    writeSse(res, calculatorHint);
-  } catch (error) {
-    const reply = data ? localAnalysis(data, language) : (language === 'hy' ? 'Նշեք կոնկրետ կրիպտոարժույթ (օր.՝ BTC, ETH կամ SOL), և կտամ շուկայական տվյալներով կառուցված վերլուծություն։' : language === 'ru' ? 'Укажите конкретную криптовалюту, например BTC, ETH или SOL, и я дам анализ на основе рыночных данных.' : 'Name a specific cryptocurrency, such as BTC, ETH, or SOL, and I will provide a market-data-based analysis.');
-    writeSse(res, reply + calculatorHint);
-    console.warn('AI fallback:', error.message);
+async function fetchKlines(symbol, interval = '1h', limit = 100) {
+  const pair = `${symbol.toUpperCase()}USDT`;
+  return cached(`klines:${pair}:${interval}:${limit}`, 30_000, async () => {
+    const r = await fetch(
+      `${BINANCE_BASE}/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}`
+    );
+    if (!r.ok) throw new Error(`Binance klines error for ${pair}: ${r.status}`);
+    const raw = await r.json();
+    return raw.map((k) => ({
+      openTime: k[0],
+      open: Number(k[1]),
+      high: Number(k[2]),
+      low: Number(k[3]),
+      close: Number(k[4]),
+      volume: Number(k[5]),
+    }));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Տեխնիկական ինդիկատորներ
+// ---------------------------------------------------------------------------
+function sma(values, period) {
+  if (values.length < period) return null;
+  const slice = values.slice(-period);
+  return slice.reduce((a, b) => a + b, 0) / period;
+}
+
+function rsi(values, period = 14) {
+  if (values.length < period + 1) return null;
+  let gains = 0,
+    losses = 0;
+  for (let i = values.length - period; i < values.length; i++) {
+    const diff = values[i] - values[i - 1];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
   }
-  res.write('data: [DONE]\n\n');
-  res.end();
+  const avgGain = gains / period;
+  const avgLoss = losses / period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+function trendSignal({ price, sma20, sma50, rsiValue }) {
+  let score = 0;
+  if (sma20 && sma50) score += sma20 > sma50 ? 1 : -1;
+  if (sma20 && price > sma20) score += 1;
+  if (sma20 && price < sma20) score -= 1;
+  if (rsiValue !== null) {
+    if (rsiValue > 70) score -= 1; // overbought
+    if (rsiValue < 30) score += 1; // oversold
+  }
+  if (score >= 2) return 'bullish';
+  if (score <= -2) return 'bearish';
+  return 'neutral';
+}
+
+// ============================================================================
+//  5 ԽԵԼԱՑԻ ՖՈՒՆԿՑԻԱՆԵՐ (Claude tool-use definitions)
+// ============================================================================
+const TOOLS = [
+  {
+    name: 'analyze_coin',
+    description:
+      'Կատարում է կոնկրետ կրիպտոարժույթի տեխնիկական վերլուծություն (գին, RSI, SMA20/50, տրենդ, ազդանշան) Binance-ի իրական տվյալների հիման վրա։ Օգտագործիր, երբ օգտատերը հարցնում է կոնկրետ մետաղադրամի աճելու/ընկնելու հեռանկարի մասին։',
+    input_schema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Կրիպտոարժույթի կոդը, օր. BTC, ETH, SOL' },
+        interval: {
+          type: 'string',
+          description: 'Ժամանակային շրջանակ (1h, 4h, 1d)',
+          enum: ['15m', '1h', '4h', '1d'],
+        },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'risk_calculator',
+    description:
+      'Հաշվարկում է լիկվիդացիայի գին, ռիսկի չափը և պոզիցիայի օպտիմալ չափը ֆյուչերսային գործարքի համար (leverage-ով)։ Օգտագործիր, երբ օգտատերը հարցնում է ռիսկերի, leverage-ի կամ liquidation-ի մասին։',
+    input_schema: {
+      type: 'object',
+      properties: {
+        entryPrice: { type: 'number', description: 'Մուտքի գին' },
+        leverage: { type: 'number', description: 'Լծակ (օր. 5, 10, 20)' },
+        direction: { type: 'string', enum: ['long', 'short'] },
+        accountBalance: { type: 'number', description: 'Հաշվի հասանելի հաշվեկշիռ (USDT)' },
+        riskPercent: {
+          type: 'number',
+          description: 'Ընդունելի ռիսկը հաշվեկշռից %, օր. 2',
+        },
+      },
+      required: ['entryPrice', 'leverage', 'direction'],
+    },
+  },
+  {
+    name: 'market_overview',
+    description:
+      'Վերադարձնում է շուկայի ընդհանուր պատկերը՝ top gainers, top losers, ընդհանուր breadth (քանի մետաղադրամ է աճում vs նվազում)։ Օգտագործիր ընդհանուր շուկայի տրամադրության հարցերի համար։',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'compare_coins',
+    description:
+      'Համեմատում է երկու կրիպտոարժույթ գնի, 24ժ փոփոխության, ծավալի և տեխնիկական ցուցանիշների առումով։ Օգտագործիր "X vs Y" տիպի հարցերի համար։',
+    input_schema: {
+      type: 'object',
+      properties: {
+        symbolA: { type: 'string' },
+        symbolB: { type: 'string' },
+      },
+      required: ['symbolA', 'symbolB'],
+    },
+  },
+  {
+    name: 'portfolio_simulator',
+    description:
+      'Սիմուլացնում է հիպոթետիկ գործարքի արդյունքը (PnL) ելնելով մուտքի գնից, ելքի գնից, պոզիցիայի չափից և leverage-ից։ Օգտագործիր, երբ օգտատերը հարցնում է "եթե ես գնեմ X-ով և վաճառեմ Y-ով, որքա՞ն կշահեմ/կկորցնեմ"։',
+    input_schema: {
+      type: 'object',
+      properties: {
+        entryPrice: { type: 'number' },
+        exitPrice: { type: 'number' },
+        positionSizeUsdt: { type: 'number' },
+        leverage: { type: 'number' },
+        direction: { type: 'string', enum: ['long', 'short'] },
+      },
+      required: ['entryPrice', 'exitPrice', 'positionSizeUsdt'],
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Tool handler-ներ (իրական հաշվարկ/տվյալ)
+// ---------------------------------------------------------------------------
+async function runTool(name, input) {
+  switch (name) {
+    case 'analyze_coin': {
+      const interval = input.interval || '1h';
+      const klines = await fetchKlines(input.symbol, interval, 100);
+      const closes = klines.map((k) => k.close);
+      const price = closes[closes.length - 1];
+      const sma20 = sma(closes, 20);
+      const sma50 = sma(closes, 50);
+      const rsiValue = rsi(closes, 14);
+      const signal = trendSignal({ price, sma20, sma50, rsiValue });
+      const change = ((price - closes[0]) / closes[0]) * 100;
+      return {
+        symbol: input.symbol.toUpperCase(),
+        interval,
+        price,
+        sma20,
+        sma50,
+        rsi: rsiValue,
+        periodChangePercent: Number(change.toFixed(2)),
+        signal,
+      };
+    }
+    case 'risk_calculator': {
+      const { entryPrice, leverage, direction, accountBalance, riskPercent } = input;
+      const maintenanceMargin = 0.005; // 0.5% պայմանական
+      const liqDistance = entryPrice * (1 / leverage - maintenanceMargin);
+      const liquidationPrice =
+        direction === 'long' ? entryPrice - liqDistance : entryPrice + liqDistance;
+      let suggestedPositionSize = null;
+      if (accountBalance && riskPercent) {
+        const riskAmount = accountBalance * (riskPercent / 100);
+        suggestedPositionSize = Number((riskAmount * leverage).toFixed(2));
+      }
+      return {
+        entryPrice,
+        leverage,
+        direction,
+        liquidationPrice: Number(liquidationPrice.toFixed(6)),
+        liquidationDistancePercent: Number(((liqDistance / entryPrice) * 100).toFixed(2)),
+        suggestedPositionSizeUsdt: suggestedPositionSize,
+        note: 'Մոտավոր հաշվարկ է. Ճշգրիտ liquidation-ը կախված է բորսայի կոնկրետ ֆորմուլայից և fee-ներից։',
+      };
+    }
+    case 'market_overview': {
+      const tickers = await fetchAllTickers();
+      const sorted = [...tickers].sort((a, b) => b.change24h - a.change24h);
+      const gainers = sorted.slice(0, 5);
+      const losers = sorted.slice(-5).reverse();
+      const advancing = tickers.filter((t) => t.change24h > 0).length;
+      const declining = tickers.filter((t) => t.change24h < 0).length;
+      return {
+        totalCoins: tickers.length,
+        advancing,
+        declining,
+        breadthPercent: Number(((advancing / tickers.length) * 100).toFixed(1)),
+        topGainers: gainers,
+        topLosers: losers,
+      };
+    }
+    case 'compare_coins': {
+      const [a, b] = await Promise.all([
+        runTool('analyze_coin', { symbol: input.symbolA, interval: '1h' }),
+        runTool('analyze_coin', { symbol: input.symbolB, interval: '1h' }),
+      ]);
+      return { coinA: a, coinB: b };
+    }
+    case 'portfolio_simulator': {
+      const { entryPrice, exitPrice, positionSizeUsdt, leverage = 1, direction = 'long' } = input;
+      const priceChangePercent = ((exitPrice - entryPrice) / entryPrice) * 100;
+      const directional = direction === 'long' ? priceChangePercent : -priceChangePercent;
+      const pnlPercent = directional * leverage;
+      const pnlUsdt = Number(((positionSizeUsdt * pnlPercent) / 100).toFixed(2));
+      return {
+        entryPrice,
+        exitPrice,
+        direction,
+        leverage,
+        priceChangePercent: Number(priceChangePercent.toFixed(2)),
+        pnlPercent: Number(pnlPercent.toFixed(2)),
+        pnlUsdt,
+        finalBalanceEstimate: Number((positionSizeUsdt + pnlUsdt).toFixed(2)),
+      };
+    }
+    default:
+      throw new Error('Unknown tool: ' + name);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Համակարգային պրոմպթ
+// ---------------------------------------------------------------------------
+function systemPrompt(language, recommendFutures) {
+  const base = `Դու "Chat Crypto"-ի AI կրիպտո-վերլուծաբանն ես՝ Telegram Mini App-ի համար։
+Պատասխանիր օգտատիրոջ լեզվով (${language})։ Եղիր հակիրճ, հստակ, մասնագիտական և միշտ հիշեցրու,
+որ սա կրթական տեղեկություն է, ոչ ֆինանսական խորհուրդ։ Կոնկրետ մետաղադրամի հարցերի դեպքում
+օգտագործիր տրված գործիքները (analyze_coin, compare_coins, market_overview, risk_calculator,
+portfolio_simulator)՝ իրական տվյալների վրա հիմնված պատասխան տալու համար, երբեք մի հորինիր գներ։`;
+  const futuresNote = recommendFutures
+    ? `\n\nԱյս պատասխանի վերջում, բնական և կարճ ձևով, խորհուրդ տուր օգտատիրոջը փորձել
+"Futures Calculator Mini App"-ը (${FUTURES_CALCULATOR_URL})՝ նշելով, որ այն օգնում է
+լիկվիդացիայի մոդելավորման, ռիսկերի կառավարման և Binance-ի իրական ժամանակի տվյալների հարցում։`
+    : '';
+  return base + futuresNote;
+}
+
+// ---------------------------------------------------------------------------
+// Claude API կանչ (tool-use loop)
+// ---------------------------------------------------------------------------
+async function callClaude(messages, language, recommendFutures) {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is not configured on the server');
+  }
+  let conversation = messages;
+  for (let step = 0; step < 4; step++) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1200,
+        system: systemPrompt(language, recommendFutures),
+        messages: conversation,
+        tools: TOOLS,
+      }),
+    });
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error(`Claude API error ${r.status}: ${errText}`);
+    }
+    const data = await r.json();
+    const toolUses = data.content.filter((b) => b.type === 'tool_use');
+
+    if (toolUses.length === 0) {
+      return data.content
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+    }
+
+    // Կատարել գործիքները և ուղարկել արդյունքները հետ
+    const toolResults = await Promise.all(
+      toolUses.map(async (t) => {
+        try {
+          const result = await runTool(t.name, t.input);
+          return { type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(result) };
+        } catch (err) {
+          return {
+            type: 'tool_result',
+            tool_use_id: t.id,
+            content: JSON.stringify({ error: String(err.message || err) }),
+            is_error: true,
+          };
+        }
+      })
+    );
+
+    conversation = [
+      ...conversation,
+      { role: 'assistant', content: data.content },
+      { role: 'user', content: toolResults },
+    ];
+  }
+  return 'Ներողություն, պատասխանը կազմելիս սխալ առաջացավ։ Փորձեք կրկին։';
+}
+
+// ============================================================================
+//  API ROUTES
+// ============================================================================
+
+app.get('/api/config', (req, res) => {
+  res.json({ futuresCalculatorUrl: FUTURES_CALCULATOR_URL });
 });
-app.listen(PORT, () => console.log(`Chat Crypto listening on http://localhost:${PORT}`));
+
+app.get('/api/coins', async (req, res) => {
+  try {
+    const sortMode = req.query.sort || 'volume';
+    const tickers = await fetchAllTickers();
+    const sorted = [...tickers].sort((a, b) =>
+      sortMode === 'gainers' ? b.change24h - a.change24h : b.volume - a.volume
+    );
+    res.json(sorted.slice(0, 350)); // Binance-ի մեծ մասը (300+)
+  } catch (err) {
+    res.status(502).json({ error: String(err.message || err) });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, language = 'en', history = [], image } = req.body || {};
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    // «Ամեն 5-րդ պատասխանից հետո» Futures Calculator-ի առաջարկություն
+    const assistantTurns = history.filter((m) => m.role === 'assistant').length;
+    const recommendFutures = (assistantTurns + 1) % 5 === 0;
+
+    const userContent = [{ type: 'text', text: message }];
+    if (image && typeof image === 'string' && image.startsWith('data:image')) {
+      const [, mediaType, base64Data] = image.match(/^data:(.+);base64,(.*)$/) || [];
+      if (base64Data) {
+        userContent.push({
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64Data },
+        });
+      }
+    }
+
+    const conversation = [
+      ...history.slice(-10).map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.text,
+      })),
+      { role: 'user', content: userContent },
+    ];
+
+    const reply = await callClaude(conversation, language, recommendFutures);
+    res.json({ reply });
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: String(err.message || err) });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Chat Crypto backend listening on port ${PORT}`);
+});
