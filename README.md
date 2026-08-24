@@ -8,8 +8,10 @@ AI-ով աշխատող կրիպտո-վերլուծական Telegram Mini App՝ C
 
 ```
 chatcrypto/
-├── server.js            ← Backend (Express). AI ագենտի "ուղեղը" + Binance տվյալներ
+├── server.js            ← Backend (Express). AI ագենտի "ուղեղը" + Binance տվյալներ + (կամընտիր) bot-ի գործարկում
 ├── bot.js                ← Telegram Bot (@Chat_Crypto_Agent_Bot). Բացում է Mini App-ը
+├── Dockerfile             ← Fly.io deploy-ի համար
+├── fly.toml               ← Fly.io կարգավորումներ (միշտ-միացված, min_machines_running=1)
 ├── package.json          ← Node.js dependency-ների ցանկ
 ├── .env.example          ← Կարգավորումների նմուշ (պատճենիր որպես .env)
 ├── .env                  ← (դու ես ստեղծում) Իրական գաղտնի բանալիներ — ԵՐԲԵՔ մի՛ share արա
@@ -17,7 +19,7 @@ chatcrypto/
 └── public/
     ├── index.html         ← Frontend (Mini App-ի ամբողջ UI՝ HTML+CSS+JS մեկ ֆայլում)
     └── assets/
-        └── chat-crypto-logo.png  ← (դու ես ավելացնում) Chat Crypto-ի լոգոն
+        └── chat-crypto-logo.png  ← Chat Crypto-ի լոգոն
 ```
 
 ### Ինչու է կառուցվածքն այսպես
@@ -90,15 +92,45 @@ MINI_APP_URL=https://...            ← deploy-ից հետո ստացած https 
 npm install
 ```
 
-### 4. Backend-ի deploy (Render/Railway/VPS)
+### 4. Backend-ի deploy
 
-Deploy արա `server.js`-ը որևէ hosting-ի վրա (Render, Railway, VPS և այլն)՝ `npm start` start command-ով։ Deploy-ից հետո կստանաս https հասցե (օր. `https://chatcrypto.onrender.com`) — դա գրիր `.env`-ի `MINI_APP_URL`-ի մեջ։
+Երկու տարբերակ կա.
+
+**A) Fly.io (խորհուրդ է տրվում՝ անվճար + երբեք չի քնում)**
+
+```bash
+# 1) Տեղադրիր flyctl
+curl -L https://fly.io/install.sh | sh
+
+# 2) Մուտք գործիր/գրանցվիր
+fly auth login
+
+# 3) Նախագծի folder-ում գործարկիր (fly.toml-ը արդեն պատրաստ է)
+cd chatcrypto
+fly launch --no-deploy   # ընտրիր անուն, հաստատիր region-ը (fra = Frankfurt)
+
+# 4) Գաղտնիքները ավելացրու (ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, MINI_APP_URL)
+fly secrets set ANTHROPIC_API_KEY=sk-ant-... TELEGRAM_BOT_TOKEN=... MINI_APP_URL=https://chat-crypto.fly.dev FUTURES_CALCULATOR_URL=https://t.me/Block_News_Crypto_bot
+
+# 5) Deploy
+fly deploy
+```
+
+`fly.toml`-ում արդեն կարգավորված է `min_machines_running = 1` — սա նշանակում է backend-ը (և դրա ներսում աշխատող Telegram bot-ը) **երբեք չի «քնում»**, Free Allowance-ի սահմաններում մնալով։
+
+> Backend-ը (`server.js`) և Telegram bot-ը (`bot.js`) **միասին, մեկ պրոցեսում** են աշխատում. `server.js`-ը startup-ի ժամանակ ինքն է ներբեռնում bot.js-ի `startBot()`-ը, եթե `TELEGRAM_BOT_TOKEN` և `MINI_APP_URL` կարգավորված են։ Առանձին deploy անելու կարիք չկա bot-ի համար։
+
+**B) Render/Railway/VPS** (այլընտրանք)
+
+Deploy արա `server.js`-ը՝ `npm start` start command-ով, `npm install` build command-ով։ Deploy-ից հետո ստացած https հասցեն գրիր `.env`-ի `MINI_APP_URL`-ի մեջ։
 
 > `server.js`-ը ինքնաբավ է. եթե `public/index.html`-ը բացակայում է hosting-ի վրա, backend-ն ինքն է այն ստեղծում գործարկման պահին (embedded կոպիայից)։
 
 ### 5. Bot-ի գործարկում
 
-Առանձին process-ով (կամ առանձին background service-ով hosting-ի վրա).
+Եթե backend-ը deploy արել ես Fly.io-ով (քայլ 4A) — **բոտն արդեն ինքն է գործարկվում** backend-ի հետ միասին, առանձին ոչինչ պետք չէ անել։
+
+Եթե ուզում ես բոտը որպես **առանձին** process գործարկել (local dev-ի ժամանակ, կամ Render/Railway-ում որպես 2-րդ service).
 ```bash
 npm run bot
 ```
