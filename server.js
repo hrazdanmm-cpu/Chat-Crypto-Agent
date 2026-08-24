@@ -491,4 +491,17 @@ app.get(/^(?!\/api\/).*/, (req, res) => {
 app.listen(PORT, () => {
   console.log(`Chat Crypto backend listening on port ${PORT}`);
   console.log(`Serving static files from: ${PUBLIC_DIR}`);
+
+  // ---------------------------------------------------------------------------
+  // Կամընտիր. եթե TELEGRAM_BOT_TOKEN և MINI_APP_URL կարգավորված են, Telegram
+  // bot-ը գործարկվում է հենց այս պրոցեսի ներսում (single-service deploy,
+  // հարմար է Fly.io/Railway-ի պես platform-ների անվճար single-instance tier-ի համար,
+  // որտեղ ցանկալի է backend + bot մեկ process-ով պահել)։
+  // ---------------------------------------------------------------------------
+  try {
+    const { startBot } = require('./bot');
+    startBot();
+  } catch (err) {
+    console.warn('Telegram bot module-ը չհաջողվեց բեռնել (bot.js/telegraf բացակայում է կամ սխալ է). ', err.message || err);
+  }
 });
