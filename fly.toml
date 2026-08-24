@@ -1,0 +1,30 @@
+# ============================================================================
+#  Chat Crypto — fly.toml (Fly.io deploy config)
+#  Կարևոր. min_machines_running = 1 → պրոցեսը երբեք չի «քնում»
+# ============================================================================
+app = "chat-crypto"          # փոխիր, եթե Fly-ը ասի, որ արդեն զբաղված է
+primary_region = "fra"        # Ֆրանկֆուրտ, մոտ Հայաստանին. կարող ես փոխել
+
+[build]
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # ⬅ երբեք ինքնաշխատ չի կանգնում
+  auto_start_machines = true
+  min_machines_running = 1     # ⬅ միշտ գոնե 1 մեքենա աշխատող է մնում
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/config"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
