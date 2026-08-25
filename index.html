@@ -7,7 +7,7 @@ export const config = {
 export default async function handler(req) {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 45Method,
+      status: 405,
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -24,7 +24,6 @@ export default async function handler(req) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Օգտագործում ենք gemini-1.5-flash մոդելը՝ արագ և էժան/անվճար streaming-ի համար
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. 
@@ -35,12 +34,9 @@ Important rules:
 3. Always include a short disclaimer that this is educational content, not financial advice.`;
 
     const contents = [];
-    
-    // System instruction
     contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
     contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow all instructions and perform as Chat Crypto.' }] });
 
-    // History mapping
     if (Array.isArray(history)) {
       history.forEach((msg) => {
         contents.push({
@@ -50,7 +46,6 @@ Important rules:
       });
     }
 
-    // Current Prompt with Image support
     const currentParts = [{ text: message }];
     if (image && typeof image === 'string' && image.includes(';base64,')) {
       const match = image.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -66,7 +61,6 @@ Important rules:
 
     contents.push({ role: 'user', parts: currentParts });
 
-    // Generate Stream with Gemini
     const result = await model.generateContentStream({ contents });
 
     const encoder = new TextEncoder();
