@@ -4,80 +4,130 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#080b14" />
-  <title>Chat Crypto</title>
+  <title>Chat Crypto Agent</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config={theme:{extend:{colors:{base:'#080b14',panel:'#111827',panel2:'#182238',line:'#26324b',brand:'#7c83ff',mint:'#34d399'},fontFamily:{sans:['Inter','system-ui','Noto Sans Armenian','sans-serif']}}}}</script>
+  <script>tailwind.config={theme:{extend:{colors:{base:'#121318',panel:'#1c1d24',panel2:'#262833',line:'#2c2e3b',brand:'#2563eb',mint:'#10b981'},fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
   <style>
-    :root{--safe-bottom:env(safe-area-inset-bottom,0px)}*{-webkit-tap-highlight-color:transparent}html,body{height:100%;background:#080b14}body{overflow:hidden}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#34405a;border-radius:9px}.no-scrollbar::-webkit-scrollbar{display:none}
-    @keyframes ring{to{transform:rotate(360deg)}}@keyframes hue{50%{filter:hue-rotate(50deg)}}@keyframes up{from{opacity:0;transform:translateY(8px)}}@keyframes pulse{50%{opacity:.45;transform:translateY(-3px)}}
-    .logo{position:relative;display:grid;place-items:center;border-radius:999px;isolation:isolate;background:#0d1426}.logo:before{content:"";position:absolute;inset:-4px;border-radius:inherit;background:conic-gradient(#35d39e,#5698ff,#9664ff,#ff7eb6,#ffc658,#35d39e);animation:ring 16s linear infinite,hue 10s linear infinite;z-index:-1}.logo:after{content:"";position:absolute;inset:-1px;border-radius:inherit;border:2px solid #0a1020;z-index:-1}.logo-image{width:100%;height:100%;object-fit:cover;object-position:center 42%;border-radius:inherit;display:block}.message{animation:up .2s ease-out}.bot-bubble{border-radius:5px 18px 18px 18px}.user-bubble{border-radius:18px 5px 18px 18px}.typing i{display:inline-block;width:6px;height:6px;border-radius:50%;background:#aeb8d0;margin:0 2px;animation:pulse 1s infinite}.typing i:nth-child(2){animation-delay:.13s}.typing i:nth-child(3){animation-delay:.26s}
+    :root{--safe-bottom:env(safe-area-inset-bottom,0px)}*{-webkit-tap-highlight-color:transparent}html,body{height:100%;background:#121318}body{overflow:hidden}::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#2c2e3b;border-radius:9px}
+    .grid-menu{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .menu-card{background:#1c1d24;border:1px solid #2a2c3a;border-radius:12px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:all 0.2s}
+    .menu-card:hover{background:#252734;border-color:#3b3e52}
+    .menu-card svg{width:26px;height:26px}
+    .bot-bubble{border-radius:6px 16px 16px 16px;background:#1c1d24;border:1px solid #2c2e3b}
+    .user-bubble{border-radius:16px 6px 16px 16px;background:#2563eb}
   </style>
 </head>
 <body class="bg-base text-slate-100 antialiased">
-  <div id="app" class="h-[100dvh] flex overflow-hidden">
-    <aside id="sidebar" class="hidden md:flex w-72 shrink-0 flex-col border-r border-line bg-[#0c1222] p-3">
-      <div class="flex items-center gap-3 px-2 py-3"><div class="logo h-9 w-9"><img class="logo-image" src="assets/chat-crypto-logo.png" alt="Chat Crypto logo"></div><div><strong>Chat Crypto</strong><p class="text-xs text-slate-400">AI Crypto Analyst</p></div></div>
-      <button id="newChatSide" class="mt-3 rounded-xl bg-brand px-4 py-3 text-left text-sm font-semibold transition hover:brightness-110">＋ <span data-t="newChat">Նոր զրույց</span></button>
-      <a id="futuresMenu" href="https://t.me/Block_News_Crypto_bot" class="mt-2 rounded-xl border border-mint/40 bg-mint/10 px-4 py-3 text-mint hover:bg-mint/20" target="_blank" rel="noopener"><span class="block text-sm font-semibold">🧮 Futures Calculator Mini App</span><span class="mt-0.5 block text-[11px] text-slate-400">Open in Telegram →</span></a>
-      <div class="mt-3 grid gap-1"><button class="tool rounded-lg px-3 py-2 text-left text-sm text-slate-300 hover:bg-panel" data-tool="analysis">📊 <span data-label="analysis">Վերլուծություն</span></button><button class="tool rounded-lg px-3 py-2 text-left text-sm text-slate-300 hover:bg-panel" data-tool="risk">⚠️ <span data-label="risk">Ռիսկեր</span></button><button class="tool rounded-lg px-3 py-2 text-left text-sm text-slate-300 hover:bg-panel" data-tool="gainers">🚀 <span data-label="gainers">Top Gainers</span></button></div>
-      <label class="mt-4 flex items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2 text-slate-400"><span>⌕</span><input id="searchChats" class="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500" data-p="search" placeholder="Որոնել զրույցներում" /></label>
-      <p class="mt-5 px-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500" data-t="recent">Վերջին զրույցներ</p><div id="history" class="mt-2 flex-1 space-y-1 overflow-y-auto"></div>
-      <p class="border-t border-line px-2 pt-3 text-[11px] leading-4 text-slate-500" data-t="disclaimer">Կրթական տեղեկություն, ոչ ֆինանսական խորհուրդ։</p>
-    </aside>
-    <section class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-16 shrink-0 items-center justify-between border-b border-line bg-base/90 px-3 backdrop-blur md:px-5">
-        <div class="flex items-center gap-3"><button id="menu" class="rounded-lg p-2 hover:bg-panel md:hidden" aria-label="Menu">☰</button><div class="logo h-8 w-8 md:hidden"><img class="logo-image" src="assets/chat-crypto-logo.png" alt="Chat Crypto logo"></div><div><h1 class="font-semibold">Chat Crypto</h1><p class="text-xs text-slate-400"><span class="text-mint">●</span> <span data-t="online">Առցանց է</span></p></div></div>
-        <div class="relative flex items-center gap-1"><button id="voiceToggle" class="rounded-lg p-2 text-slate-300 hover:bg-panel" aria-label="Text to speech" title="Voice responses">🔊</button><button id="moreBtn" class="rounded-lg p-2 text-slate-300 hover:bg-panel" aria-label="More menu">⋮</button><div id="moreMenu" class="absolute right-0 top-11 z-20 hidden w-64 rounded-xl border border-line bg-panel p-2 shadow-2xl"><a href="https://t.me/Block_News_Crypto_bot" target="_blank" rel="noopener" class="block rounded-lg px-3 py-2 text-sm text-mint hover:bg-panel2">🧮 Futures Calculator Mini App<span class="mt-1 block text-[11px] text-slate-400">Open in Telegram →</span></a></div><select id="uiLanguage" class="rounded-lg border border-line bg-panel px-2 py-1.5 text-sm outline-none"><option value="en">English</option><option value="ru">Русский</option><option value="hy">Հայերեն</option><option value="tr">Türkçe</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="it">Italiano</option><option value="pl">Polski</option><option value="nl">Nederlands</option><option value="uk">Українська</option><option value="ar">العربية</option><option value="fa">فارسی</option><option value="hi">हिन्दी</option><option value="id">Bahasa Indonesia</option><option value="vi">Tiếng Việt</option><option value="zh">中文</option><option value="ja">日本語</option><option value="ko">한국어</option></select></div>
-      </header>
-      <main id="scrollArea" class="no-scrollbar flex-1 overflow-y-auto"><div id="chat" class="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 px-4 py-7 md:px-7">
-        <section id="welcome" class="m-auto text-center"><div class="logo mx-auto mb-7 h-16 w-16 max-w-[26vw] max-h-[26vw]"><img class="logo-image" src="assets/chat-crypto-logo.png" alt="Chat Crypto logo"></div><h2 class="text-3xl font-bold tracking-tight" data-t="welcomeTitle">Ձեր AI կրիպտո-վերլուծաբանը</h2><p class="mx-auto mt-3 max-w-xl leading-6 text-slate-400" data-t="welcomeText">Հարցրե՛ք կրիպտոների մասին հայերեն, English կամ Русский։ Լատինատառ հայերենն էլ հասկանում եմ ու պատասխանում եմ հայատառ։</p>
-          <div class="mt-7 flex flex-wrap justify-center gap-2"><button class="prompt rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-prompt="Analyze BTC — trend, key indicators, outlook"><span data-promptlabel="0">BTC վերլուծություն</span></button><button class="rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-coins>▾</button><button class="prompt rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-prompt="What are the risks of trading ETH right now?"><span data-promptlabel="1">ETH ռիսկեր</span></button><button class="rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-coins>▾</button><button class="prompt rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-prompt="Show top gainers this week"><span data-promptlabel="2">Top Gainers</span></button><button class="rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-coins>▾</button><button class="prompt rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-prompt="Compare BTC vs ETH"><span data-promptlabel="3">BTC vs ETH</span></button><button class="rounded-xl border border-line bg-panel px-3 py-2 text-sm hover:bg-panel2" data-coins>▾</button></div>
-        </section>
-      </div></main>
-      <footer class="border-t border-line bg-base/95 px-3 pt-2 backdrop-blur md:px-6" style="padding-bottom:max(14px,var(--safe-bottom))"><div id="preview" class="mx-auto hidden max-w-3xl items-center gap-2 pb-2"><img id="previewImage" class="h-12 w-12 rounded-lg border border-line object-cover" alt="Attached image"><span class="text-xs text-slate-400" data-t="imageAttached">Նկար կցված է</span><button id="removeImage" class="ml-auto rounded-md px-2 text-slate-400 hover:bg-panel">✕</button></div><div class="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-line bg-panel px-2 py-2 focus-within:border-brand"><input id="imageInput" class="hidden" type="file" accept="image/*"><button id="attach" class="rounded-xl p-2 text-slate-300 hover:bg-panel2" aria-label="Attach image">＋</button><textarea id="input" rows="1" maxlength="4000" class="no-scrollbar max-h-32 min-h-[34px] flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-5 outline-none placeholder:text-slate-500" data-p="placeholder" placeholder="Հարցրեք կրիպտոյի մասին…"></textarea><button id="mic" class="rounded-xl p-2 text-slate-300 hover:bg-panel2" aria-label="Voice input" title="Voice input">🎙</button><button id="liveVoice" class="rounded-xl p-2 text-slate-300 hover:bg-panel2" aria-label="Live voice chat" title="Live voice chat">◉</button><button id="send" class="grid h-9 w-9 place-items-center rounded-xl bg-brand text-lg font-bold transition hover:brightness-110" aria-label="Send">↑</button></div><p class="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-slate-500" data-t="hint">Enter՝ ուղարկել · Shift+Enter՝ նոր տող · Սա ֆինանսական խորհուրդ չէ</p></footer>
-    </section>
+  <div id="app" class="h-[100dvh] flex flex-col justify-between overflow-hidden">
+    
+    <!-- Header -->
+    <header class="flex h-14 shrink-0 items-center justify-between border-b border-line bg-base px-4">
+      <h1 class="font-bold text-lg">Crypto Agent Chat</h1>
+      <button id="moreBtn" class="text-slate-300 text-xl font-bold">⋮</button>
+    </header>
+
+    <!-- Main Scroll Area -->
+    <main id="scrollArea" class="flex-1 overflow-y-auto p-4">
+      
+      <!-- 6 Grid Menu Buttons -->
+      <div id="gridMenu" class="grid-menu mb-6">
+        <button class="menu-card" onclick="sendPrompt('Analyze Token')">
+          <svg fill="none" stroke="#60a5fa" viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path stroke-linecap="round" d="m21 21-4.35-4.35"></path></svg>
+          <span class="text-xs font-medium text-slate-200">Analyze Token</span>
+        </button>
+
+        <button class="menu-card" onclick="sendPrompt('Market Trends')">
+          <svg fill="none" stroke="#38bdf8" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+          <span class="text-xs font-medium text-slate-200">Market Trends</span>
+        </button>
+
+        <button class="menu-card" onclick="sendPrompt('News Feed')">
+          <svg fill="none" stroke="#94a3b8" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2"></path></svg>
+          <span class="text-xs font-medium text-slate-200">News Feed</span>
+        </button>
+
+        <button class="menu-card" onclick="sendPrompt('Portfolio Tracker')">
+          <svg fill="none" stroke="#fbbf24" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+          <span class="text-xs font-medium text-slate-200">Portfolio Tracker</span>
+        </button>
+
+        <button class="menu-card" onclick="sendPrompt('AI Chatbot')">
+          <svg fill="none" stroke="#818cf8" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+          <span class="text-xs font-medium text-slate-200">AI Chatbot</span>
+        </button>
+
+        <button class="menu-card" onclick="sendPrompt('Alerts & Signals')">
+          <svg fill="none" stroke="#f59e0b" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+          <span class="text-xs font-medium text-slate-200">Alerts & Signals</span>
+        </button>
+      </div>
+
+      <!-- Chat Container -->
+      <div id="chat" class="flex flex-col gap-3"></div>
+    </main>
+
+    <!-- Footer Input Bar -->
+    <footer class="border-t border-line bg-base p-3" style="padding-bottom: max(12px, var(--safe-bottom));">
+      <div class="flex items-center gap-2">
+        <input id="input" type="text" placeholder="Գրեք հարցը..." class="flex-1 rounded-xl border border-line bg-panel px-4 py-2.5 text-sm outline-none placeholder:text-slate-500 focus:border-brand" />
+        <button id="sendBtn" class="rounded-xl bg-mint px-4 py-2.5 font-semibold text-sm text-slate-950 transition hover:brightness-110">Ուղարկել</button>
+      </div>
+    </footer>
   </div>
-  <div id="sheet" class="fixed inset-0 z-30 hidden bg-black/60 p-3 md:hidden"><aside class="flex h-full w-72 flex-col rounded-2xl border border-line bg-[#0c1222] p-3 shadow-2xl"><div class="flex items-center justify-between"><strong>Chat Crypto</strong><button id="closeMenu" class="p-2">✕</button></div><button id="newChatMobile" class="mt-4 rounded-xl bg-brand p-3 text-left text-sm font-semibold">＋ <span data-t="newChat">Նոր զրույց</span></button><a id="futuresMenuMobile" href="https://t.me/Block_News_Crypto_bot" class="mt-2 block rounded-xl border border-mint/40 bg-mint/10 px-4 py-3 text-mint hover:bg-mint/20" target="_blank" rel="noopener"><span class="block text-sm font-semibold">🧮 Futures Calculator Mini App</span><span class="mt-0.5 block text-[11px] text-slate-400">Open in Telegram →</span></a><div id="historyMobile" class="mt-3 flex-1 overflow-y-auto"></div></aside></div>
-  <div id="coinModal" class="fixed inset-0 z-40 hidden items-end bg-black/70 p-0 md:items-center md:justify-center md:p-5"><section class="max-h-[82dvh] w-full max-w-lg rounded-t-2xl border border-line bg-[#0d1426] p-4 md:rounded-2xl"><div class="mb-3 flex items-center justify-between"><h3 class="font-semibold" data-t="chooseCoin">Ընտրեք կրիպտո</h3><button id="closeCoins" class="rounded-lg p-1.5 hover:bg-panel">✕</button></div><input id="coinSearch" class="w-full rounded-xl border border-line bg-panel px-3 py-2.5 text-sm outline-none focus:border-brand" data-p="coinSearch" placeholder="Որոնել՝ BTC, Solana…"><div id="coins" class="mt-3 max-h-[55dvh] space-y-1 overflow-y-auto"></div></section></div>
+
 <script>
 (() => {
   'use strict';
-  const API_CHAT='/api/chat', API_COINS='/api/coins';
-  const TEXT={hy:{newChat:'Նոր զրույց',recent:'Վերջին զրույցներ',search:'Որոնել զրույցներում',disclaimer:'Կրթական տեղեկություն, ոչ ֆինանսական խորհուրդ։',online:'Առցանց է',welcomeTitle:'Ձեր AI կրիպտո-վերլուծաբանը',welcomeText:'Հարցրու օրինակ՝ «Կաճի՞ BTC-ն», «Համեմատիր BTC vs ETH», «Ինչ ռիսկ ունեմ 10x լծակով», կամ «Ցույց տուր այսօրվա թոփ աճողները»։ Կարող եմ կարդալ գրաֆիկներ, վերլուծել գներ ու տենդենցներ, հաշվել ռիսկերը և օգնել քեզ ճիշտ որոշումներ կայացնել՝ քո ցանկացած կրիպտոարժույթի վերաբերյալ։',placeholder:'Հարցրեք կրիպտոյի մասին…',hint:'Enter՝ ուղարկել · Shift+Enter՝ նոր տող · Սա ֆինանսական խորհուրդ չէ',imageAttached:'Նկար կցված է',chooseCoin:'Ընտրեք կրիպտո',coinSearch:'Որոնել՝ BTC, Solana…'},en:{newChat:'New chat',recent:'Recent chats',search:'Search conversations',disclaimer:'Educational information, not financial advice.',online:'Online',welcomeTitle:'Your AI crypto analyst',welcomeText:'Ask me things like "Will BTC go up?", "Compare BTC vs ETH", "What\u2019s my risk at 10x leverage?", or "Show today\u2019s top gainers." I can read charts, analyze prices and trends, calculate risk, and help you make smart decisions about any cryptocurrency you\u2019re interested in.',placeholder:'Ask about crypto…',hint:'Enter to send · Shift+Enter for a new line · Not financial advice',imageAttached:'Image attached',chooseCoin:'Choose a coin',coinSearch:'Search BTC, Solana…'},ru:{newChat:'Новый чат',recent:'Недавние чаты',search:'Поиск чатов',disclaimer:'Образовательная информация, не финансовый совет.',online:'В сети',welcomeTitle:'Ваш AI-криптоаналитик',welcomeText:'Спроси, например: «Вырастет ли BTC?», «Сравни BTC и ETH», «Какой у меня риск при плече 10x?», или «Покажи топ роста за сегодня». Я умею читать графики, анализировать цены и тренды, считать риски и помогать принимать верные решения по любой интересующей тебя криптовалюте.',placeholder:'Спросите о крипто…',hint:'Enter — отправить · Shift+Enter — новая строка · Не финансовый совет',imageAttached:'Изображение прикреплено',chooseCoin:'Выберите криптовалюту',coinSearch:'Поиск BTC, Solana…'}};
-  const LABELS={en:['Analysis','Risks','Top Gainers'],ru:['Анализ','Риски','Лидеры роста'],hy:['Վերլուծություն','Ռիսկեր','Աճի առաջատարներ'],tr:['Analiz','Riskler','En Çok Yükselenler'],es:['Análisis','Riesgos','Mayores ganadores'],fr:['Analyse','Risques','Meilleures hausses'],de:['Analyse','Risiken','Top-Gewinner'],pt:['Análise','Riscos','Maiores altas'],it:['Analisi','Rischi','Migliori rialzi'],pl:['Analiza','Ryzyko','Największe wzrosty'],nl:['Analyse','Risico','Top stijgers'],uk:['Аналіз','Ризики','Лідери зростання'],ar:['تحليل','المخاطر','الأكثر ارتفاعاً'],fa:['تحلیل','ریسک‌ها','بیشترین رشد'],hi:['विश्लेषण','जोखिम','शीर्ष बढ़त'],id:['Analisis','Risiko','Kenaikan Teratas'],vi:['Phân tích','Rủi ro','Tăng giá hàng đầu'],zh:['分析','风险','涨幅榜'],ja:['分析','リスク','上昇率上位'],ko:['분석','위험','상승률 상위']};
-  const PROMPT_LABELS={en:['BTC Analysis','ETH Risks','Top Gainers','BTC vs ETH'],ru:['Анализ BTC','Риски ETH','Лидеры роста','BTC vs ETH'],hy:['BTC վերլուծություն','ETH ռիսկեր','Թոփ աճողներ','BTC vs ETH'],tr:['BTC Analizi','ETH Riskleri','En Çok Yükselenler','BTC vs ETH'],es:['Análisis BTC','Riesgos ETH','Mayores Ganadores','BTC vs ETH'],fr:['Analyse BTC','Risques ETH','Meilleures Hausses','BTC vs ETH'],de:['BTC-Analyse','ETH-Risiken','Top-Gewinner','BTC vs ETH'],pt:['Análise BTC','Riscos ETH','Maiores Altas','BTC vs ETH'],it:['Analisi BTC','Rischi ETH','Migliori Rialzi','BTC vs ETH'],pl:['Analiza BTC','Ryzyka ETH','Największe Wzrosty','BTC vs ETH'],nl:['BTC-analyse',"ETH-risico's",'Top Stijgers','BTC vs ETH'],uk:['Аналіз BTC','Ризики ETH','Лідери Зростання','BTC vs ETH'],ar:['تحليل BTC','مخاطر ETH','الأكثر ارتفاعاً','BTC مقابل ETH'],fa:['تحلیل BTC','ریسک\u200cهای ETH','بیشترین رشد','BTC در برابر ETH'],hi:['BTC विश्लेषण','ETH जोखिम','शीर्ष बढ़त','BTC बनाम ETH'],id:['Analisis BTC','Risiko ETH','Kenaikan Teratas','BTC vs ETH'],vi:['Phân tích BTC','Rủi ro ETH','Tăng giá hàng đầu','BTC vs ETH'],zh:['BTC 分析','ETH 风险','涨幅榜','BTC 对比 ETH'],ja:['BTC分析','ETHリスク','上昇率上位','BTC対ETH'],ko:['BTC 분석','ETH 위험','상승률 상위','BTC 대 ETH']};
-  const $=s=>document.querySelector(s),chat=$('#chat'),input=$('#input'),welcome=$('#welcome');let lang=localStorage.getItem('cc.lang')||'en',image=null,voice=localStorage.getItem('cc.voice')==='1',liveRecognition=null,messages=[];
-  const latinArmenian=s=>/[a-z]/i.test(s)&&/(barev|inch|vonc|vor|es|em|hay|gni|verluc|risk|inchpes|karox)/i.test(s);
-  function toArmenian(s){let x=s.toLowerCase();for(const [a,b] of [['dz','ձ'],['ts','ց'],['ch','չ'],['sh','շ'],['zh','ժ'],['gh','ղ'],['kh','խ'],['th','թ'],['ph','փ'],['ev','և'],['a','ա'],['b','բ'],['g','գ'],['d','դ'],['e','ե'],['z','զ'],['i','ի'],['l','լ'],['x','խ'],['k','կ'],['h','հ'],['m','մ'],['y','յ'],['n','ն'],['o','ո'],['p','պ'],['j','ջ'],['r','ր'],['s','ս'],['v','վ'],['t','տ'],['u','ու'],['f','ֆ'],['q','ք'],['w','վ'],['c','կ']])x=x.replaceAll(a,b);return x}
-  function detect(s){return /[\u0530-\u058f]/.test(s)||latinArmenian(s)?'hy':/[а-яё]/i.test(s)?'ru':'en'}
-  let activeSpeechButton=null;
-  function addListenButton(b,text){const button=document.createElement('button');button.className='mt-2 flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs text-slate-300 hover:bg-panel2 transition';button.innerHTML='<span class="listen-icon">🔊</span><span class="listen-label">լսել</span>';button.onclick=()=>toggleSpeak(button,text);b.append(document.createElement('br'),button);return button}
-  function setSpeechButtonState(btn,playing){if(!btn)return;const icon=btn.querySelector('.listen-icon'),label=btn.querySelector('.listen-label');if(playing){icon.textContent='⏸';label.textContent='կանգնեցնել';btn.classList.add('text-mint','border-mint/50');btn.style.animation='pulse 1.4s ease-in-out infinite'}else{icon.textContent='🔊';label.textContent='լսել';btn.classList.remove('text-mint','border-mint/50');btn.style.animation=''}}
-  function toggleSpeak(btn,text){if(activeSpeechButton===btn&&speechSynthesis.speaking){speechSynthesis.cancel();setSpeechButtonState(btn,false);activeSpeechButton=null;return}speak(text,true,btn)}
-  function bubble(role,text,stream=false){const row=document.createElement('article');row.className='message flex gap-2 '+(role==='user'?'ml-auto flex-row-reverse':'mr-auto');const av=document.createElement('div');av.className='grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-xl '+(role==='user'?'bg-brand':'bg-panel2');if(role==='user')av.textContent='Դ';else{const logo=document.createElement('img');logo.src='assets/chat-crypto-logo.png';logo.alt='Chat Crypto';logo.className='h-full w-full object-cover';av.append(logo)}const b=document.createElement('div');b.className=(role==='user'?'user-bubble border border-[#4a59a7] bg-[#28366d]':'bot-bubble border border-line bg-panel')+' max-w-[calc(100%-42px)] whitespace-pre-wrap px-3.5 py-2.5 text-[14px] leading-6';b.textContent=text;if(role==='bot'&&!stream)addListenButton(b,text);row.append(av,b);chat.append(row);if(stream) b.dataset.stream='1';row.scrollIntoView({block:'end',behavior:'smooth'});return b}
-  function typing(){const b=bubble('bot','',true);b.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';return b}
-  function resize(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,128)+'px'}
-  function history(){const users=messages.filter(x=>x.role==='user').slice(-10).reverse();for(const box of [$('#history'),$('#historyMobile')]){box.replaceChildren();users.forEach(m=>{const b=document.createElement('button');b.className='block w-full truncate rounded-lg px-2 py-2 text-left text-sm text-slate-400 hover:bg-panel hover:text-white';b.textContent=m.text;b.onclick=()=>{input.value=m.text;input.focus();$('#sheet').classList.add('hidden')};box.append(b)})}}
-  function persist(){localStorage.setItem('cc.messages',JSON.stringify(messages.slice(-40)));history()}
-  function reset(){messages=[];localStorage.removeItem('cc.messages');chat.replaceChildren(welcome);welcome.hidden=false;history();input.focus()}
-  const SPEECH_LOCALE={en:'en-US',ru:'ru-RU',hy:'hy-AM',tr:'tr-TR',es:'es-ES',fr:'fr-FR',de:'de-DE',pt:'pt-PT',it:'it-IT',pl:'pl-PL',nl:'nl-NL',uk:'uk-UA',ar:'ar-SA',fa:'fa-IR',hi:'hi-IN',id:'id-ID',vi:'vi-VN',zh:'zh-CN',ja:'ja-JP',ko:'ko-KR'};
-  function speak(t,force=false,btn=null){if((!voice&&!force)||!('speechSynthesis'in window))return;speechSynthesis.cancel();if(activeSpeechButton)setSpeechButtonState(activeSpeechButton,false);const u=new SpeechSynthesisUtterance(t);u.lang=SPEECH_LOCALE[lang]||(detect(t)==='hy'?'hy-AM':detect(t)==='ru'?'ru-RU':'en-US');const available=speechSynthesis.getVoices();const matching=available.find(v=>v.lang.toLowerCase().startsWith(u.lang.slice(0,2).toLowerCase()));if(matching)u.voice=matching;if(btn){activeSpeechButton=btn;setSpeechButtonState(btn,true);u.onend=()=>{setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null};u.onerror=()=>{setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null}}speechSynthesis.speak(u)}
-  async function streamAnswer(payload,holder){const r=await fetch(API_CHAT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok){let detail='';try{const errBody=await r.json();detail=errBody.error||JSON.stringify(errBody)}catch{try{detail=await r.text()}catch{}}throw new Error(`Server error ${r.status}${detail?': '+detail:''}`)}const type=r.headers.get('content-type')||'';if(!r.body||!type.includes('stream')){const data=await r.json();return data.reply||data.text||''}const reader=r.body.getReader(),decoder=new TextDecoder();let out='',buffer='';const append=token=>{out+=token;holder.textContent=out;holder.scrollIntoView({block:'end'})};while(true){const {done,value}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const lines=buffer.split(/\r?\n/);buffer=done?'':lines.pop();for(const raw of lines){const line=raw.trim();if(!line||line==='data: [DONE]')continue;const data=line.replace(/^data:\s*/,'');try{const d=JSON.parse(data);append(d.token||d.text||d.delta||'')}catch{if(!line.startsWith('data:'))append(line)}}if(done)break}return out}
-  function fallback(q,l,err){const reason=err&&err.message?err.message:'';const suffix=reason?`\n\n[Debug: ${reason}]`:'';if(l==='hy')return 'Այս պահին սերվերի հետ կապ չհաջողվեց։ Ստուգեք, որ backend սերվերը միացված է և ANTHROPIC_API_KEY-ը կարգավորված է։'+suffix;if(l==='ru')return 'Сервер сейчас недоступен. Проверьте, что backend запущен и настроен ANTHROPIC_API_KEY.'+suffix;return 'The server is currently unavailable. Please check that the backend is running and ANTHROPIC_API_KEY is configured.'+suffix}
-  async function send(text=input.value){const original=text.trim();if(!original)return;welcome.hidden=true;const scriptLanguage=detect(original),normalized=scriptLanguage==='hy'&&latinArmenian(original)?toArmenian(original):original;const responseLanguage=lang;bubble('user',normalized);messages.push({role:'user',text:normalized,at:Date.now()});input.value='';resize();persist();const holder=typing();try{const reply=await streamAnswer({message:normalized,language:responseLanguage,history:messages.slice(-12),image},holder);holder.textContent=reply;const listenBtn=addListenButton(holder,reply);messages.push({role:'assistant',text:reply,at:Date.now()});speak(reply,false,listenBtn)}catch(e){const reply=fallback(normalized,responseLanguage,e);holder.textContent=reply;addListenButton(holder,reply);messages.push({role:'assistant',text:reply,at:Date.now()});console.warn(e)}image=null;$('#preview').classList.add('hidden');$('#imageInput').value='';persist()}
-  const coins=[['BTC','Bitcoin'],['ETH','Ethereum'],['SOL','Solana'],['BNB','BNB'],['XRP','XRP'],['ADA','Cardano'],['DOGE','Dogecoin'],['AVAX','Avalanche'],['TON','Toncoin'],['LINK','Chainlink']];let activeCoins=coins;
-  async function loadCoins(sort='volume'){const out=$('#coins');out.textContent='Loading…';try{const r=await fetch(`${API_COINS}?sort=${sort}`);if(!r.ok)throw new Error('local API unavailable');const d=await r.json();activeCoins=Array.isArray(d)?d:(d.coins||coins)}catch{try{const r=await fetch('https://api.binance.com/api/v3/ticker/24hr');const d=await r.json();activeCoins=d.filter(x=>x.symbol.endsWith('USDT')&&Number(x.lastPrice)>0).map(x=>({symbol:x.symbol.slice(0,-4),name:x.symbol.slice(0,-4),price:Number(x.lastPrice),change24h:Number(x.priceChangePercent),volume:Number(x.quoteVolume)})).sort(sort==='gainers'?(a,b)=>b.change24h-a.change24h:(a,b)=>b.volume-a.volume)}catch{activeCoins=coins}}renderCoins(activeCoins)}function renderCoins(list){const out=$('#coins');out.replaceChildren();list.slice(0,700).forEach(c=>{const symbol=String(c.symbol||c[0]).toUpperCase(),name=String(c.name||c[1]||symbol),price=Number(c.price),change=Number(c.change24h),b=document.createElement('button'),left=document.createElement('span'),info=document.createElement('span'),right=document.createElement('span');b.className='flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left hover:bg-panel';left.className='font-medium';left.textContent=symbol;info.className='ml-2 truncate text-xs text-slate-400';info.textContent=name;right.className='ml-auto flex shrink-0 items-center gap-2 text-xs';const priceEl=document.createElement('span');priceEl.textContent=Number.isFinite(price)?'$'+price.toLocaleString('en-US',{maximumFractionDigits:price<1?6:2}):'';const changeEl=document.createElement('span');changeEl.className=change>=0?'text-mint':'text-rose-400';changeEl.textContent=Number.isFinite(change)?`${change>=0?'▲':'▼'} ${Math.abs(change).toFixed(2)}%`:'';right.append(priceEl,changeEl);b.append(left,info,right);b.onclick=()=>{input.value=`Analyze ${symbol}`;$('#coinModal').classList.add('hidden');input.focus()};out.append(b)})}
-  function i18n(){const t=TEXT[lang]||TEXT.en;document.documentElement.lang=lang;document.querySelectorAll('[data-t]').forEach(e=>e.textContent=t[e.dataset.t]);document.querySelectorAll('[data-p]').forEach(e=>e.placeholder=t[e.dataset.p]);document.querySelectorAll('[data-label]').forEach((e,i)=>e.textContent=(LABELS[lang]||LABELS.en)[i]);document.querySelectorAll('[data-promptlabel]').forEach(e=>{const i=Number(e.dataset.promptlabel);e.textContent=(PROMPT_LABELS[lang]||PROMPT_LABELS.en)[i]});localStorage.setItem('cc.lang',lang)}
-  $('#send').onclick=()=>send();input.oninput=resize;input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}};$('#newChatSide').onclick=reset;$('#newChatMobile').onclick=reset;$('#menu').onclick=()=>$('#sheet').classList.remove('hidden');$('#closeMenu').onclick=()=>$('#sheet').classList.add('hidden');$('#voiceToggle').onclick=()=>{voice=!voice;localStorage.setItem('cc.voice',voice?'1':'0');$('#voiceToggle').classList.toggle('text-mint',voice)};$('#voiceToggle').classList.toggle('text-mint',voice);$('#moreBtn').onclick=()=>$('#moreMenu').classList.toggle('hidden');$('#uiLanguage').value=lang;$('#uiLanguage').onchange=e=>{lang=e.target.value;i18n()};$('#attach').onclick=()=>$('#imageInput').click();$('#imageInput').onchange=e=>{const f=e.target.files[0];if(!f)return;if(f.size>5*1024*1024){alert('Maximum image size is 5 MB');return}const r=new FileReader();r.onload=()=>{image=r.result;$('#previewImage').src=image;$('#preview').classList.remove('hidden')};r.readAsDataURL(f)};$('#removeImage').onclick=()=>{image=null;$('#preview').classList.add('hidden')};$('#coinSearch').oninput=e=>renderCoins(activeCoins.filter(c=>(String(c.symbol||c[0])+' '+String(c.name||c[1])).toLowerCase().includes(e.target.value.toLowerCase())));$('#closeCoins').onclick=()=>$('#coinModal').classList.add('hidden');document.querySelectorAll('.prompt').forEach(b=>b.onclick=()=>send(b.dataset.prompt));document.querySelectorAll('[data-coins]').forEach(b=>b.onclick=()=>window.openCoinPicker());
-  $('#searchChats').oninput=e=>{for(const b of $('#history').children)b.hidden=!b.textContent.toLowerCase().includes(e.target.value.toLowerCase())};
-  function recognitionLanguage(){return lang==='hy'?'hy-AM':lang==='ru'?'ru-RU':lang==='tr'?'tr-TR':lang==='ar'?'ar-SA':'en-US'}
-  $('#mic').onclick=()=>{const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return alert('Speech recognition is not supported by this browser.');const r=new R();r.lang=recognitionLanguage();r.onresult=e=>{input.value=e.results[0][0].transcript;resize()};r.start()};
-  $('#liveVoice').onclick=()=>{const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return alert('Speech recognition is not supported by this browser.');if(liveRecognition){liveRecognition.stop();liveRecognition=null;$('#liveVoice').classList.remove('bg-mint','text-base');return}const r=new R();liveRecognition=r;r.lang=recognitionLanguage();r.continuous=true;r.interimResults=false;r.onresult=e=>{const text=e.results[e.results.length-1][0].transcript;send(text)};r.onend=()=>{if(liveRecognition===r)try{r.start()}catch{}};r.onerror=()=>{liveRecognition=null;$('#liveVoice').classList.remove('bg-mint','text-base')};$('#liveVoice').classList.add('bg-mint','text-base');r.start()};
-  document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{const action=b.dataset.tool;if(action==='gainers')window.openCoinPicker('gainers');else if(action==='risk')send('Analyze current crypto market risks and ask me to select a coin') ;else window.openCoinPicker()});
-  try{messages=JSON.parse(localStorage.getItem('cc.messages')||'[]');if(messages.length){welcome.hidden=true;messages.forEach(m=>bubble(m.role==='assistant'?'bot':m.role,m.text))}history()}catch{localStorage.removeItem('cc.messages')}fetch('/api/config').then(r=>r.ok?r.json():null).then(config=>{const url=config?.futuresCalculatorUrl;if(url){document.querySelectorAll('#futuresMenu,#futuresMenuMobile,#moreMenu a').forEach(a=>a.href=url)}}).catch(()=>{});i18n();
-  window.openCoinPicker=(sort='volume')=>{$('#coinModal').classList.remove('hidden');loadCoins(sort)};
-  if(window.Telegram?.WebApp){Telegram.WebApp.ready();Telegram.WebApp.expand();Telegram.WebApp.setHeaderColor('#080b14')}
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+
+  function addMessage(role, text) {
+    const msg = document.createElement('div');
+    msg.className = role === 'user' 
+      ? 'user-bubble ml-auto max-w-[85%] px-3.5 py-2 text-sm text-white' 
+      : 'bot-bubble mr-auto max-w-[85%] px-3.5 py-2 text-sm text-slate-200';
+    msg.textContent = text;
+    chat.appendChild(msg);
+    msg.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function handleSend(text) {
+    const q = text || input.value.trim();
+    if (!q) return;
+
+    addMessage('user', q);
+    if (!text) input.value = '';
+
+    const botMsg = document.createElement('div');
+    botMsg.className = 'bot-bubble mr-auto max-w-[85%] px-3.5 py-2 text-sm text-slate-400';
+    botMsg.textContent = 'Մշակվում է...';
+    chat.appendChild(botMsg);
+    botMsg.scrollIntoView({ behavior: 'smooth' });
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: q })
+      });
+      const data = await res.json();
+      botMsg.className = 'bot-bubble mr-auto max-w-[85%] px-3.5 py-2 text-sm text-slate-200';
+      botMsg.textContent = data.reply || data.text || 'Պատասխան չկա';
+    } catch (e) {
+      botMsg.textContent = 'Սերվերի սխալ: Ստուգեք կապը';
+    }
+  }
+
+  window.sendPrompt = (txt) => handleSend(txt);
+  sendBtn.onclick = () => handleSend();
+  input.onkeydown = (e) => { if (e.key === 'Enter') handleSend(); };
+
+  if (window.Telegram?.WebApp) {
+    Telegram.WebApp.ready();
+    Telegram.WebApp.expand();
+  }
 })();
 </script>
 </body>
