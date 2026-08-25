@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="hy">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Crypto Agent</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #1c1c1e; color: #fff; margin: 0; padding: 20px; }
+    #chat { height: 75vh; overflow-y: auto; border-bottom: 1px solid #333; margin-bottom: 10px; }
+    .msg { margin: 8px 0; padding: 10px; border-radius: 8px; max-width: 80%; }
+    .user { background: #007aff; margin-left: auto; }
+    .bot { background: #2c2c2e; margin-right: auto; }
+    .input-box { display: flex; gap: 8px; }
+    input { flex: 1; padding: 10px; border-radius: 6px; border: none; }
+    button { padding: 10px 15px; border-radius: 6px; border: none; background: #34c759; color: white; }
+  </style>
+</head>
+<body>
+  <h3>Crypto Agent Chat</h3>
+  <div id="chat"></div>
+  <div class="input-box">
+    <input type="text" id="userInput" placeholder="Գրեք հարցը..." />
+    <button onclick="sendMsg()">Ուղարկել</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    async function sendMsg() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if(!text) return;
+
+      const chat = document.getElementById('chat');
+      chat.innerHTML += `<div class="msg user">${text}</div>`;
+      input.value = '';
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ message: text })
+        });
+        const data = await res.json();
+        chat.innerHTML += `<div class="msg bot">${data.reply || data.response || 'Պատասխան չկա'}</div>`;
+      } catch(e) {
+        chat.innerHTML += `<div class="msg bot">Սխալ տեղի ունեցավ: ${e.message}</div>`;
+      }
+      chat.scrollTop = chat.scrollHeight;
+    }
+  </script>
+</body>
+</html>
