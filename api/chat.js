@@ -24,8 +24,8 @@ export default async function handler(req) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Օգտագործում ենք ճիշտ և հասանելի gemini-2.5-flash մոդելը
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Օգտագործում ենք ճիշտ և հասանելի gemini-3.5-flash մոդելը
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
     const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. Target Language for response: ${language || 'hy'}. Important rules: 1. Provide concise, clear, and high-quality technical and market analysis for cryptocurrencies. 2. If the user talks in Armenian (even in Latin script), respond in Armenian script (հայատառ). 3. Always include a short disclaimer that this is educational content, not financial advice.`;
     
