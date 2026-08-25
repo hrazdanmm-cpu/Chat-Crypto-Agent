@@ -1,6 +1,6 @@
 # Chat Crypto — Ամբողջական Telegram Mini App
 
-AI-ով աշխատող կրիպտո-վերլուծական Telegram Mini App՝ Claude API-ի (5 խելացի tool-ֆունկցիա) և Binance-ի իրական տվյալների հիման վրա։
+AI-ով աշխատող կրիպտո-վերլուծական Telegram Mini App՝ Gemini API-ի (5 խելացի function-calling ֆունկցիա) և Binance-ի իրական տվյալների հիման վրա։
 
 ---
 
@@ -54,12 +54,12 @@ public/index.html (server.js-ից սպասարկվող)
    ▼
 POST /api/chat → server.js
    │
-   │ 5) server.js-ը կանչում է Claude API-ին (tool-calling)
-   │    Claude-ն ինքն է որոշում՝ պետք է analyze_coin կանչել
+   │ 5) server.js-ը կանչում է Gemini API-ին (tool-calling)
+   │    Gemini-ն ինքն է որոշում՝ պետք է analyze_coin կանչել
    ▼
 server.js-ը կանչում է Binance API (իրական գներ/klines)
    │
-   │ 6) տվյալները վերադառնում են Claude-ին, Claude-ն կազմում է վերջնական պատասխանը
+   │ 6) տվյալները վերադառնում են Gemini-ին, Gemini-ն կազմում է վերջնական պատասխանը
    ▼
 Պատասխանը վերադառնում է օգտատիրոջը՝ ընտրված լեզվով
 ```
@@ -70,7 +70,7 @@ server.js-ը կանչում է Binance API (իրական գներ/klines)
 
 ### 1. Բանալիներ ստանալ
 
-- **Anthropic API key** → https://console.anthropic.com/settings/keys
+- **Gemini API key** → https://aistudio.google.com/app/apikey
 - **Telegram Bot token** → @BotFather-ում `/mybots` → ընտրիր բոտը → **API Token** → **Revoke current token**-ով նոր token ստացիր (հին token-ը այլևս վավեր չէ)
 
 ### 2. `.env` ֆայլի ստեղծում
@@ -81,7 +81,7 @@ cp .env.example .env
 
 Բացիր `.env`-ը և լրացրու.
 ```
-ANTHROPIC_API_KEY=sk-ant-...        ← քո իրական բանալին
+GEMINI_API_KEY=AIzaSy...        ← քո իրական բանալին
 TELEGRAM_BOT_TOKEN=...              ← BotFather-ից ստացած ՆՈՐ token-ը
 MINI_APP_URL=https://...            ← deploy-ից հետո ստացած https հասցեն (քայլ 4-ից)
 ```
@@ -109,8 +109,8 @@ fly auth login
 cd chatcrypto
 fly launch --no-deploy   # ընտրիր անուն, հաստատիր region-ը (fra = Frankfurt)
 
-# 4) Գաղտնիքները ավելացրու (ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, MINI_APP_URL)
-fly secrets set ANTHROPIC_API_KEY=sk-ant-... TELEGRAM_BOT_TOKEN=... MINI_APP_URL=https://chat-crypto.fly.dev FUTURES_CALCULATOR_URL=https://t.me/Block_News_Crypto_bot
+# 4) Գաղտնիքները ավելացրու (GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, MINI_APP_URL)
+fly secrets set GEMINI_API_KEY=AIzaSy... TELEGRAM_BOT_TOKEN=... MINI_APP_URL=https://chat-crypto.fly.dev FUTURES_CALCULATOR_URL=https://t.me/Block_News_Crypto_bot
 
 # 5) Deploy
 fly deploy
@@ -156,8 +156,8 @@ npm run bot
 ## 🔒 Անվտանգության կանոններ
 
 1. `.env` ֆայլը **երբեք** մի՛ push արա GitHub-ում (ավելացրու `.gitignore`-ում)։
-2. Եթե token/key-ը պատահաբար հրապարակվեց (chat-ում, screenshot-ում, GitHub-ում), անմիջապես **revoke** արա (BotFather-ում՝ `/revoke`, Anthropic Console-ում՝ delete key) և ստացիր նոր։
-3. `TELEGRAM_BOT_TOKEN`-ը և `ANTHROPIC_API_KEY`-ը գաղտնիքներ են՝ հավասար նշանակությամբ ինչպես բանկային գաղտնաբառը։
+2. Եթե token/key-ը պատահաբար հրապարակվեց (chat-ում, screenshot-ում, GitHub-ում), անմիջապես **revoke** արա (BotFather-ում՝ `/revoke`, Google AI Studio-ում՝ delete key) և ստացիր նոր։
+3. `TELEGRAM_BOT_TOKEN`-ը և `GEMINI_API_KEY`-ը գաղտնիքներ են՝ հավասար նշանակությամբ ինչպես բանկային գաղտնաբառը։
 
 ---
 
@@ -167,6 +167,6 @@ npm run bot
 |---|---|---|
 | `Cannot GET /` | Static path սխալ | Արդեն ուղղված է (`__dirname` + fallback route) |
 | `index.html չի գտնվել` | `public/` folder-ը deploy-ի ժամանակ բացակայել է | Ինքնաբերաբար ստեղծվում է (embedded fallback) |
-| «Կապ չհաջողվեց» + `[Debug: ...]` | Սովորաբար `ANTHROPIC_API_KEY` սխալ/բացակա | Ստուգիր `.env`-ը, վերագործարկիր server-ը |
+| «Կապ չհաջողվեց» + `[Debug: ...]` | Սովորաբար `GEMINI_API_KEY` սխալ/բացակա | Ստուգիր `.env`-ը, վերագործարկիր server-ը |
 | Bot-ը չի արձագանքում | `TELEGRAM_BOT_TOKEN` սխալ կամ `bot.js` չգործարկված | `npm run bot`, ստուգիր console output-ը |
 | WebApp կոճակը չի բացվում | `MINI_APP_URL`-ը http է, ոչ https | Telegram WebApp-ը պահանջում է **https** |
