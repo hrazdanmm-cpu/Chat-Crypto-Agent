@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="chat-crypto-logo.png" alt="Logo" width="120" height="120">
+  <br>
+  <b>Chat Crypto Agent</b>
+</p>
 # Chat Crypto — Ամբողջական Telegram Mini App
 
 AI-ով աշխատող կրիպտո-վերլուծական Telegram Mini App՝ Gemini API-ի (5 խելացի function-calling ֆունկցիա) և Binance-ի իրական տվյալների հիման վրա։
