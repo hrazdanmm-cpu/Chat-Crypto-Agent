@@ -1,6 +1,6 @@
 // ============================================================================
 //  Chat Crypto — Backend (Node.js / Express)
-//  Ագենտի 5 խելացի ֆունկցիաներով (Claude tool-use) + Binance շուկայի տվյալներ
+//  Ագենտի 5 խելացի ֆունկցիաներով (Gemini function-calling) + Binance շուկայի տվյալներ
 // ============================================================================
 'use strict';
 
@@ -54,8 +54,8 @@ app.use(express.json({ limit: '8mb' }));
 app.use(express.static(PUBLIC_DIR)); // index.html և assets/ պետք է լինեն այս թղթապանակում
 
 const PORT = process.env.PORT || 3000;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const FUTURES_CALCULATOR_URL =
   process.env.FUTURES_CALCULATOR_URL || 'https://t.me/Block_News_Crypto_bot';
 const BINANCE_BASE = 'https://api.binance.com';
@@ -153,14 +153,14 @@ function trendSignal({ price, sma20, sma50, rsiValue }) {
 }
 
 // ============================================================================
-//  5 ԽԵԼԱՑԻ ՖՈՒՆԿՑԻԱՆԵՐ (Claude tool-use definitions)
+//  5 ԽԵԼԱՑԻ ՖՈՒՆԿՑԻԱՆԵՐ (Gemini function-calling definitions)
 // ============================================================================
 const TOOLS = [
   {
     name: 'analyze_coin',
     description:
       'Կատարում է կոնկրետ կրիպտոարժույթի տեխնիկական վերլուծություն (գին, RSI, SMA20/50, տրենդ, ազդանշան) Binance-ի իրական տվյալների հիման վրա։ Օգտագործիր, երբ օգտատերը հարցնում է կոնկրետ մետաղադրամի աճելու/ընկնելու հեռանկարի մասին։',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         symbol: { type: 'string', description: 'Կրիպտոարժույթի կոդը, օր. BTC, ETH, SOL' },
@@ -177,7 +177,7 @@ const TOOLS = [
     name: 'risk_calculator',
     description:
       'Հաշվարկում է լիկվիդացիայի գին, ռիսկի չափը և պոզիցիայի օպտիմալ չափը ֆյուչերսային գործարքի համար (leverage-ով)։ Օգտագործիր, երբ օգտատերը հարցնում է ռիսկերի, leverage-ի կամ liquidation-ի մասին։',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         entryPrice: { type: 'number', description: 'Մուտքի գին' },
@@ -196,13 +196,13 @@ const TOOLS = [
     name: 'market_overview',
     description:
       'Վերադարձնում է շուկայի ընդհանուր պատկերը՝ top gainers, top losers, ընդհանուր breadth (քանի մետաղադրամ է աճում vs նվազում)։ Օգտագործիր ընդհանուր շուկայի տրամադրության հարցերի համար։',
-    input_schema: { type: 'object', properties: {}, required: [] },
+    parameters: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'compare_coins',
     description:
       'Համեմատում է երկու կրիպտոարժույթ գնի, 24ժ փոփոխության, ծավալի և տեխնիկական ցուցանիշների առումով։ Օգտագործիր "X vs Y" տիպի հարցերի համար։',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         symbolA: { type: 'string' },
@@ -215,7 +215,7 @@ const TOOLS = [
     name: 'portfolio_simulator',
     description:
       'Սիմուլացնում է հիպոթետիկ գործարքի արդյունքը (PnL) ելնելով մուտքի գնից, ելքի գնից, պոզիցիայի չափից և leverage-ից։ Օգտագործիր, երբ օգտատերը հարցնում է "եթե ես գնեմ X-ով և վաճառեմ Y-ով, որքա՞ն կշահեմ/կկորցնեմ"։',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         entryPrice: { type: 'number' },
@@ -351,55 +351,56 @@ portfolio_simulator)՝ իրական տվյալների վրա հիմնված պ�
 }
 
 // ---------------------------------------------------------------------------
-// Claude API կանչ (tool-use loop)
+// Gemini API կանչ (function-calling loop)
 // ---------------------------------------------------------------------------
-async function callClaude(messages, language, recommendFutures) {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is not configured on the server');
+const GEMINI_URL = (model) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+async function callGemini(contents, language, recommendFutures) {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured on the server');
   }
-  let conversation = messages;
+  let conversation = contents;
   for (let step = 0; step < 4; step++) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const r = await fetch(`${GEMINI_URL(GEMINI_MODEL)}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 1200,
-        system: systemPrompt(language, recommendFutures),
-        messages: conversation,
-        tools: TOOLS,
+        system_instruction: { parts: [{ text: systemPrompt(language, recommendFutures) }] },
+        contents: conversation,
+        tools: [{ function_declarations: TOOLS }],
+        generationConfig: { maxOutputTokens: 1200 },
       }),
     });
     if (!r.ok) {
       const errText = await r.text();
-      throw new Error(`Claude API error ${r.status}: ${errText}`);
+      throw new Error(`Gemini API error ${r.status}: ${errText}`);
     }
     const data = await r.json();
-    const toolUses = data.content.filter((b) => b.type === 'tool_use');
+    const candidate = data.candidates && data.candidates[0];
+    const parts = (candidate && candidate.content && candidate.content.parts) || [];
+    const functionCalls = parts.filter((p) => p.functionCall);
 
-    if (toolUses.length === 0) {
-      return data.content
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
+    if (functionCalls.length === 0) {
+      return parts
+        .filter((p) => typeof p.text === 'string')
+        .map((p) => p.text)
         .join('\n');
     }
 
     // Կատարել գործիքները և ուղարկել արդյունքները հետ
-    const toolResults = await Promise.all(
-      toolUses.map(async (t) => {
+    const functionResponseParts = await Promise.all(
+      functionCalls.map(async (p) => {
+        const { name, args } = p.functionCall;
         try {
-          const result = await runTool(t.name, t.input);
-          return { type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(result) };
+          const result = await runTool(name, args || {});
+          return { functionResponse: { name, response: result } };
         } catch (err) {
           return {
-            type: 'tool_result',
-            tool_use_id: t.id,
-            content: JSON.stringify({ error: String(err.message || err) }),
-            is_error: true,
+            functionResponse: {
+              name,
+              response: { error: String(err.message || err) },
+            },
           };
         }
       })
@@ -407,8 +408,8 @@ async function callClaude(messages, language, recommendFutures) {
 
     conversation = [
       ...conversation,
-      { role: 'assistant', content: data.content },
-      { role: 'user', content: toolResults },
+      { role: 'model', parts },
+      { role: 'user', parts: functionResponseParts },
     ];
   }
   return 'Ներողություն, պատասխանը կազմելիս սխալ առաջացավ։ Փորձեք կրկին։';
@@ -446,26 +447,23 @@ app.post('/api/chat', async (req, res) => {
     const assistantTurns = history.filter((m) => m.role === 'assistant').length;
     const recommendFutures = (assistantTurns + 1) % 5 === 0;
 
-    const userContent = [{ type: 'text', text: message }];
+    const userParts = [{ text: message }];
     if (image && typeof image === 'string' && image.startsWith('data:image')) {
       const [, mediaType, base64Data] = image.match(/^data:(.+);base64,(.*)$/) || [];
       if (base64Data) {
-        userContent.push({
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType, data: base64Data },
-        });
+        userParts.push({ inline_data: { mime_type: mediaType, data: base64Data } });
       }
     }
 
     const conversation = [
       ...history.slice(-10).map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.text,
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.text }],
       })),
-      { role: 'user', content: userContent },
+      { role: 'user', parts: userParts },
     ];
 
-    const reply = await callClaude(conversation, language, recommendFutures);
+    const reply = await callGemini(conversation, language, recommendFutures);
     res.json({ reply });
   } catch (err) {
     console.error(err);
