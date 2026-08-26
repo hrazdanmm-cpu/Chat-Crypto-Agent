@@ -48,8 +48,13 @@ export default async function handler(req) {
     messages.push({ role: 'user', content: userContent });
 
     // Zhipu AI (GLM) — OpenAI-compatible /chat/completions endpoint.
-    // NOTE: glm-4-flash is text-only. If users regularly attach images,
-    // switch the model below to a vision-capable one (e.g. "glm-4v-flash").
+    // NOTE 1: "glm-4-flash" (without a date suffix) is NOT a valid model code and
+    // returns error 1211 ("模型不存在，请检查模型代码" / "model not found").
+    // The real, currently-live free model codes are:
+    //   - "glm-4-flash-250414"  (Zhipu's original free model, text-only)
+    //   - "glm-4.7-flash"       (newer, stronger free model, text-only)
+    // NOTE 2: this model is text-only. If users regularly attach images,
+    // switch the model below to a vision-capable one (e.g. "glm-4.6v" / "glm-4v-flash").
     const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
@@ -57,7 +62,7 @@ export default async function handler(req) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'glm-4-flash', // Zhipu AI (GLM) մոդել
+        model: 'glm-4-flash-250414', // Zhipu AI (GLM) իրական, աշխատող model code
         messages: messages,
         temperature: 0.2,
         top_p: 0.7,
