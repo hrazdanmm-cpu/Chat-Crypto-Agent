@@ -1,57 +1,211 @@
-import express from 'express';
-import OpenAI from 'openai';
+<!DOCTYPE html>
+<html lang="hy">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Crypto Agent</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            padding: 12px 16px;
+            background-color: #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #334155;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        select {
+            background: #0f172a;
+            color: #f8fafc;
+            border: 1px solid #475569;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .message {
+            padding: 10px 14px;
+            border-radius: 12px;
+            max-width: 85%;
+            line-height: 1.4;
+            font-size: 14px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        .message.user {
+            background-color: #3b82f6;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        .message.assistant {
+            background-color: #1e293b;
+            color: #f8fafc;
+            align-self: flex-start;
+            border: 1px solid #334155;
+            border-bottom-left-radius: 2px;
+        }
+        #input-container {
+            display: flex;
+            padding: 12px;
+            background-color: #1e293b;
+            border-top: 1px solid #334155;
+            gap: 8px;
+        }
+        input {
+            flex: 1;
+            background-color: #0f172a;
+            color: #f8fafc;
+            border: 1px solid #475569;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+        input:focus {
+            border-color: #3b82f6;
+        }
+        button {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 0 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:active {
+            background-color: #1d4ed8;
+        }
+    </style>
+</head>
+<body>
 
-const app = express();
-app.use(express.json({ limit: '10mb' }));
+    <div class="header">
+        <h1>Chat Crypto Agent</h1>
+        <select id="language-select">
+            <option value="hy">Հայերեն</option>
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
+        </select>
+    </div>
 
-// NVIDIA Nemotron կլիենտի կարգավորումը
-const nvidiaClient = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY,
-  baseURL: 'https://integrate.api.nvidia.com/v1'
-});
+    <div id="chat-container">
+        <div class="message assistant">Բարև ձեզ։ Ես ձեր կրիպտո վերլուծաբան ագենտն եմ։ Ինչո՞վ կարող եմ օգնել այսօր։</div>
+    </div>
 
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, history = [], language = 'en' } = req.body;
-    
-    // Ստեղծում ենք համատեքստը NVIDIA Nemotron մոդելի համար
-    const messages = [
-      {
-        role: 'system',
-        content: `You are Chat Crypto, an expert AI crypto analyst. Respond in language: ${language}. Provide precise, helpful cryptocurrency insights, trend analyses, and risk evaluations.`
-      },
-      ...history.map(h => ({
-        role: h.role === 'user' ? 'user' : 'assistant',
-        content: h.text
-      })),
-      { role: 'user', content: message }
-    ];
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="Հարցրեք կրիպտոյի մասին...">
+        <button id="send-btn">Ուղարկել</button>
+    </div>
 
-    // Ուղարկում ենք հարցումը բացառապես NVIDIA API-ին (streaming ռեժիմով)
-    const completion = await nvidiaClient.chat.completions.create({
-      model: 'nvidia/nvidia-nemotron-nano-9b-v2',
-      messages: messages,
-      temperature: 0.2,
-      top_p: 0.7,
-      max_tokens: 1024,
-      stream: true
-    });
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const languageSelect = document.getElementById('language-select');
 
-    for await (const chunk of completion) {
-      const text = chunk.choices[0]?.delta?.content || '';
-      if (text) {
-        res.write(`data: ${JSON.stringify({ token: text })}\n\n`);
-      }
-    }
-    res.write('data: [DONE]\n\n');
-    res.end();
+        let history = [];
 
-  } catch (error) {
-    console.error('API Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            appendMessage(text, 'user');
+            messageInput.value = '';
+
+            const assistantDiv = appendMessage('', 'assistant');
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        language: languageSelect.value,
+                        history: history
+                    })
+                });
+
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('data: ')) {
+                            const dataStr = trimmed.replace('data: ', '');
+                            if (dataStr === '[DONE]') continue;
+                            try {
+                                const parsed = JSON.parse(dataStr);
+                                if (parsed.token) {
+                                    fullResponse += parsed.token;
+                                    assistantDiv.textContent = fullResponse;
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                history.push({ role: 'user', text: text });
+                history.push({ role: 'assistant', text: fullResponse });
+
+            } catch (err) {
+                assistantDiv.textContent = 'Այս պահին սերվերի հետ կապ հաստատել չհաջողվեց:';
+            }
+        }
+
+        function appendMessage(text, role) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.textContent = text;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return div;
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
