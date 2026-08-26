@@ -49,7 +49,8 @@ Response rules — follow all of them strictly:
     }
 
     let userContent = message;
-    if (image && typeof image === 'string' && image.includes(';base64,')) {
+    const hasImage = !!(image && typeof image === 'string' && image.includes(';base64,'));
+    if (hasImage) {
       userContent = [
         { type: 'text', text: message || 'Analyze this image' },
         { type: 'image_url', image_url: { url: image } }
@@ -80,6 +81,12 @@ Response rules — follow all of them strictly:
     // and for a short, direct Q&A chatbot like this one it tends to produce longer,
     // more meandering answers. Explicitly disabling it below fixes both: replies
     // start streaming almost immediately and stay on-topic.
+    //
+    // IMAGE NOTE: "glm-4.5-flash" is text-only — sending it an image_url block causes
+    // the API to reject the whole request, which is what produced the 500 error.
+    // "glm-4.5v" is the vision-capable model on the same Coding Plan, so we switch to
+    // it automatically whenever an image is attached.
+    const model = hasImage ? 'glm-4.5v' : 'glm-4.5-flash';
     const response = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
@@ -87,19 +94,44 @@ Response rules — follow all of them strictly:
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'glm-4.5-flash', // Coding Plan-ում հասանելի, արագ մոդել
+        model,
         messages: messages,
         thinking: { type: 'disabled' }, // անջատում ենք reasoning-ը՝ արագության և կենտրոնացվածության համար
         temperature: 0.4,               // ցածր/չափավոր՝ կենտրոնացված, կանխատեսելի պատասխանների համար
         top_p: 0.85,
         max_tokens: 700,                // բավարար մանրամասն, բայց ոչ ջրիկ պատասխանների համար
-        stream: true,
+        stream: !hasImage,              // vision responses come back as one JSON payload below, not streamed
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
+      // For image requests specifically, don't surface a raw 500 / stack trace to the
+      // user — reply with a friendly, localized note instead so the chat still feels usable.
+      if (hasImage) {
+        console.error('Zhipu AI vision error:', errText);
+        const friendly =
+          targetLanguage === 'hy'
+            ? 'Ներողություն, այս պահին չեմ կարողանում վերլուծել կցված նկարը (գուցե ֆորմատի կամ չափի խնդիր է)։ Փորձեք այլ նկար, կամ նկարագրեք այն տեքստով։'
+            : targetLanguage === 'ru'
+            ? 'Извините, сейчас не получается проанализировать прикреплённое изображение (возможно, проблема с форматом или размером). Попробуйте другое изображение или опишите его текстом.'
+            : "Sorry, I can't analyze the attached image right now (possibly a format or size issue). Try another image, or describe it in text.";
+        return new Response(JSON.stringify({ reply: friendly }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
       throw new Error(`Zhipu AI API error: ${errText}`);
+    }
+
+    // Vision requests are sent non-streamed above, so just relay the plain JSON reply.
+    if (hasImage) {
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content || '';
+      return new Response(JSON.stringify({ reply }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const encoder = new TextEncoder();
