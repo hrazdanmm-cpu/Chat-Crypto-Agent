@@ -11,12 +11,13 @@
   <!--
     BACKEND NOTE (server-side, not part of this file):
     This client talks to your own backend at /api/chat and /api/coins.
-    The backend should call Zhipu AI (GLM) instead of NVIDIA:
-      Endpoint : https://open.bigmodel.cn/api/paas/v4/chat/completions
-      Model    : glm-4-flash  (swap for another GLM model if needed)
-      Auth     : Authorization: Bearer ${ZHIPU_API_KEY}
-    Make sure the ZHIPU_API_KEY environment variable is set on the server;
-    all references to NVIDIA / NVIDIA_API_KEY have been removed from the client.
+    /api/chat is now a Python Vercel Function (see api/chat.py) that calls
+    NVIDIA NIM instead of Zhipu/GLM:
+      Endpoint : https://integrate.api.nvidia.com/v1/chat/completions
+      Model    : meta/llama-3.2-90b-vision-instruct  (handles text AND image/chart input)
+      Auth     : Authorization: Bearer ${NVIDIA_API_KEY}
+    Make sure the NVIDIA_API_KEY environment variable is set on the server
+    (create a key at https://build.nvidia.com under the model's "Get API Key").
   -->
   <style>
     :root{--safe-bottom:env(safe-area-inset-bottom,0px)}*{-webkit-tap-highlight-color:transparent}html,body{height:100%;background:#080b14}body{overflow:hidden}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#34405a;border-radius:9px}.no-scrollbar::-webkit-scrollbar{display:none}
@@ -157,7 +158,7 @@
   function reset(){messages=[];localStorage.removeItem('cc.messages');chat.replaceChildren(welcome);welcome.hidden=false;history();input.focus()}
 
   async function streamAnswer(payload,holder){const r=await fetch(API_CHAT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok){let detail='';try{const errBody=await r.json();detail=errBody.error||JSON.stringify(errBody)}catch{try{detail=await r.text()}catch{}}throw new Error(`Server error ${r.status}${detail?': '+detail:''}`)}const type=r.headers.get('content-type')||'';if(!r.body||!type.includes('stream')){const data=await r.json();return data.reply||data.text||''}const reader=r.body.getReader(),decoder=new TextDecoder();let out='',buffer='';const append=token=>{out+=token;holder.textContent=out;holder.scrollIntoView({block:'end'})};while(true){const {done,value}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});const lines=buffer.split(/\r?\n/);buffer=done?'':lines.pop();for(const raw of lines){const line=raw.trim();if(!line||line==='data: [DONE]')continue;const data=line.replace(/^data:\s*/,'');try{const d=JSON.parse(data);append(d.token||d.text||d.delta||'')}catch{if(!line.startsWith('data:'))append(line)}}if(done)break}return out}
-  function fallback(q,l,err){const reason=err&&err.message?err.message:'';const suffix=reason?`\n\n[Debug: ${reason}]`:'';if(l==='hy')return 'Այս պահին սերվերի հետ կապ չհաջողվեց։ Ստուգեք, որ backend սերվերը միացված է և ZHIPU_API_KEY-ը (Zhipu AI / GLM) կարգավորված է։'+suffix;if(l==='ru')return 'Сервер сейчас недоступен. Проверьте, что backend запущен и настроен ZHIPU_API_KEY (Zhipu AI / GLM).'+suffix;return 'The server is currently unavailable. Please check that the backend is running and ZHIPU_API_KEY (Zhipu AI / GLM) is configured.'+suffix}
+  function fallback(q,l,err){const reason=err&&err.message?err.message:'';const suffix=reason?`\n\n[Debug: ${reason}]`:'';if(l==='hy')return 'Այս պահին սերվերի հետ կապ չհաջողվեց։ Ստուգեք, որ backend սերվերը միացված է և NVIDIA_API_KEY-ը (NVIDIA NIM) կարգավորված է։'+suffix;if(l==='ru')return 'Сервер сейчас недоступен. Проверьте, что backend запущен и настроен NVIDIA_API_KEY (NVIDIA NIM).'+suffix;return 'The server is currently unavailable. Please check that the backend is running and NVIDIA_API_KEY (NVIDIA NIM) is configured.'+suffix}
   async function send(text=input.value,forceSpeak=false){const original=text.trim();if(!original)return;welcome.hidden=true;const scriptLanguage=detect(original),normalized=scriptLanguage==='hy'&&latinArmenian(original)?toArmenian(original):original;const responseLanguage=lang;bubble('user',normalized);messages.push({role:'user',text:normalized,at:Date.now()});input.value='';resize();persist();const holder=typing();try{const reply=await streamAnswer({message:normalized,language:responseLanguage,history:messages.slice(-12),image},holder);holder.textContent=reply;const listenBtn=addListenButton(holder,reply);messages.push({role:'assistant',text:reply,at:Date.now()});speak(reply,forceSpeak,listenBtn)}catch(e){const reply=fallback(normalized,responseLanguage,e);holder.textContent=reply;addListenButton(holder,reply);messages.push({role:'assistant',text:reply,at:Date.now()});console.warn(e)}image=null;$('#preview').classList.add('hidden');$('#preview').classList.remove('flex');$('#imageInput').value='';persist()}
 
   const coins=[['BTC','Bitcoin'],['ETH','Ethereum'],['SOL','Solana'],['BNB','BNB'],['XRP','XRP'],['ADA','Cardano'],['DOGE','Dogecoin'],['AVAX','Avalanche'],['TON','Toncoin'],['LINK','Chainlink']];let activeCoins=coins;
