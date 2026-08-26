@@ -48,21 +48,28 @@ export default async function handler(req) {
     messages.push({ role: 'user', content: userContent });
 
     // Zhipu AI (GLM) — OpenAI-compatible /chat/completions endpoint.
-    // NOTE 1: "glm-4-flash" (without a date suffix) is NOT a valid model code and
-    // returns error 1211 ("模型不存在，请检查模型代码" / "model not found").
-    // The real, currently-live free model codes are:
-    //   - "glm-4-flash-250414"  (Zhipu's original free model, text-only)
-    //   - "glm-4.7-flash"       (newer, stronger free model, text-only)
-    // NOTE 2: this model is text-only. If users regularly attach images,
-    // switch the model below to a vision-capable one (e.g. "glm-4.6v" / "glm-4v-flash").
-    const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+    //
+    // IMPORTANT: a key created under Z.ai's "Model & Personal Coding Plan" page is a
+    // *Coding Plan* subscription key, not a normal pay-as-you-go API key. Coding Plan
+    // keys only work against the dedicated Coding endpoint below — sending them to the
+    // general endpoint (api.z.ai/api/paas/v4 or open.bigmodel.cn/api/paas/v4) returns
+    // error 1211 ("模型不存在，请检查模型代码" / "model not found"), because the key
+    // simply isn't recognized as valid there — it's not really a "wrong model name" bug.
+    //
+    // Coding Plan endpoint : https://api.z.ai/api/coding/paas/v4/chat/completions
+    // Models available on the Coding Plan (as of writing): glm-4.5, glm-4.5-air,
+    // glm-4.5-flash, glm-4.5v, glm-4.6, glm-4.6v, glm-4.7.
+    // If you later switch to a normal (non-Coding-Plan) API key from
+    // open.bigmodel.cn, use https://open.bigmodel.cn/api/paas/v4/chat/completions
+    // and a model like "glm-4-flash-250414" or "glm-4.7-flash" instead.
+    const response = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'glm-4-flash-250414', // Zhipu AI (GLM) իրական, աշխատող model code
+        model: 'glm-4.5-flash', // Coding Plan-ում հասանելի, արագ մոդել
         messages: messages,
         temperature: 0.2,
         top_p: 0.7,
