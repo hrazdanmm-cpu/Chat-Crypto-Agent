@@ -22,16 +22,18 @@ export default async function handler(req) {
     }
 
     const targetLanguage = language || 'hy';
-    const systemPrompt = `You are Chat Crypto, a focused AI crypto analyst.
+    const systemPrompt = `You are a deep, focused crypto-market analysis assistant.
+
+Identity rule (follow exactly, in ${targetLanguage}): if the user asks who/what you are, what you can do, or who made you, answer with substantially this content and nothing about the underlying model or provider: "Ես խորացված վերլուծական եմ կրիպտոարժույթների և քոիների ուղղությամբ, ինձ ստեղծել է Արթուրը՝ հատուկ շուկան վերլուծելու և գրաֆիկներ կարդալու համար:" (translate naturally into ${targetLanguage} if it isn't Armenian, keeping the same meaning: a deep crypto/coin analysis assistant, created by Arthur specifically to analyze the market and read charts). Never mention Zhipu, GLM, Z.ai, OpenAI, Anthropic, or any other underlying model/vendor name.
 
 Target language for your reply: ${targetLanguage} (if the user writes Armenian in Latin script, still reply in Armenian script — հայատառ).
 
 Response rules — follow all of them strictly:
-1. Answer the user's actual question directly and specifically. Do not restate the question, do not pad with generic introductions ("Great question!", "As an AI..." etc.), and do not drift into unrelated coins, topics, or disclaimers-heavy filler.
+1. Answer the user's actual question directly and specifically. Do not restate the question, do not pad with generic introductions ("Great question!", "As an AI..." etc.), and do not drift into unrelated coins, topics, or filler.
 2. Be concise and structured: short paragraphs or bullet points, concrete numbers/levels/reasoning where relevant, no repetition.
-3. Base your analysis only on information in the current message and the conversation history provided — never invent live prices, exact percentages, or news you don't actually have; speak in terms of trend, structure, and risk instead when you lack live data.
+3. Base your analysis only on information in the current message (including any attached chart/screenshot image) and the conversation history provided — never invent live prices, exact percentages, or news you don't actually have; speak in terms of trend, structure, and risk instead when you lack live data.
 4. If the request is ambiguous (e.g. no coin specified), ask ONE short clarifying question instead of guessing broadly.
-5. End with a single short line noting this is educational content, not financial advice — one line only, not a paragraph.`;
+5. Stay strictly focused on crypto markets, technical/chart analysis, and trading risk. Do not add a "not financial advice" / educational-only disclaimer line — omit it entirely.`;
 
     const messages = [
       { role: 'system', content: systemPrompt }
@@ -52,40 +54,33 @@ Response rules — follow all of them strictly:
     const hasImage = !!(image && typeof image === 'string' && image.includes(';base64,'));
     if (hasImage) {
       userContent = [
-        { type: 'text', text: message || 'Analyze this image' },
+        { type: 'text', text: message || 'Analyze this chart/image' },
         { type: 'image_url', image_url: { url: image } }
       ];
     }
 
     messages.push({ role: 'user', content: userContent });
 
-    // Zhipu AI (GLM) — OpenAI-compatible /chat/completions endpoint.
-    //
-    // IMPORTANT: a key created under Z.ai's "Model & Personal Coding Plan" page is a
-    // *Coding Plan* subscription key, not a normal pay-as-you-go API key. Coding Plan
-    // keys only work against the dedicated Coding endpoint below — sending them to the
-    // general endpoint (api.z.ai/api/paas/v4 or open.bigmodel.cn/api/paas/v4) returns
-    // error 1211 ("模型不存在，请检查模型代码" / "model not found"), because the key
-    // simply isn't recognized as valid there — it's not really a "wrong model name" bug.
+    // Zhipu AI (GLM) — OpenAI-compatible /chat/completions endpoint, Coding Plan.
     //
     // Coding Plan endpoint : https://api.z.ai/api/coding/paas/v4/chat/completions
     // Models available on the Coding Plan (as of writing): glm-4.5, glm-4.5-air,
     // glm-4.5-flash, glm-4.5v, glm-4.6, glm-4.6v, glm-4.7.
-    // If you later switch to a normal (non-Coding-Plan) API key from
-    // open.bigmodel.cn, use https://open.bigmodel.cn/api/paas/v4/chat/completions
-    // and a model like "glm-4-flash-250414" or "glm-4.7-flash" instead.
+    // If later switching to a normal (non-Coding-Plan) API key from
+    // open.bigmodel.cn, use https://open.bigmodel.cn/api/paas/v4/chat/completions instead.
     //
-    // PERFORMANCE NOTE: GLM-4.5+ models run an internal "thinking" / reasoning pass
-    // by default. That reasoning pass is what was causing both problems reported —
-    // it adds several extra seconds of latency before any visible text streams out,
-    // and for a short, direct Q&A chatbot like this one it tends to produce longer,
-    // more meandering answers. Explicitly disabling it below fixes both: replies
-    // start streaming almost immediately and stay on-topic.
+    // SPEED: "thinking" is explicitly disabled below — GLM-4.5+ models otherwise run an
+    // internal reasoning pass by default, which adds several seconds of latency before
+    // any visible text streams out and tends to produce longer, more meandering answers.
+    // We also now ALWAYS stream (text and image requests alike, see below), so the first
+    // tokens reach the client as soon as the model starts generating instead of the
+    // browser waiting for the entire reply to finish.
     //
-    // IMAGE NOTE: "glm-4.5-flash" is text-only — sending it an image_url block causes
-    // the API to reject the whole request, which is what produced the 500 error.
-    // "glm-4.5v" is the vision-capable model on the same Coding Plan, so we switch to
-    // it automatically whenever an image is attached.
+    // IMAGE / CHART ANALYSIS: "glm-4.5-flash" is text-only, so image_url content is
+    // rejected with a 500 by that model. "glm-4.5v" is the vision-capable model on the
+    // same Coding Plan and understands the same OpenAI-style
+    // {type:"image_url", image_url:{url: "data:image/...;base64,..."}} content block,
+    // so we switch to it automatically whenever an image/chart screenshot is attached.
     const model = hasImage ? 'glm-4.5v' : 'glm-4.5-flash';
     const response = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions', {
       method: 'POST',
@@ -99,14 +94,14 @@ Response rules — follow all of them strictly:
         thinking: { type: 'disabled' }, // անջատում ենք reasoning-ը՝ արագության և կենտրոնացվածության համար
         temperature: 0.4,               // ցածր/չափավոր՝ կենտրոնացված, կանխատեսելի պատասխանների համար
         top_p: 0.85,
-        max_tokens: 700,                // բավարար մանրամասն, բայց ոչ ջրիկ պատասխանների համար
-        stream: !hasImage,              // vision responses come back as one JSON payload below, not streamed
+        max_tokens: hasImage ? 700 : 600, // մի փոքր ավելի կարճ տեքստային պատասխաններ՝ ավելի արագ ավարտվող stream-ի համար
+        stream: true,                    // now streamed for BOTH text and image requests, for fast first-token latency
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      // For image requests specifically, don't surface a raw 500 / stack trace to the
+      // For image requests specifically, don't surface a raw error / stack trace to the
       // user — reply with a friendly, localized note instead so the chat still feels usable.
       if (hasImage) {
         console.error('Zhipu AI vision error:', errText);
@@ -124,16 +119,8 @@ Response rules — follow all of them strictly:
       throw new Error(`Zhipu AI API error: ${errText}`);
     }
 
-    // Vision requests are sent non-streamed above, so just relay the plain JSON reply.
-    if (hasImage) {
-      const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content || '';
-      return new Response(JSON.stringify({ reply }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
+    // Both text and image (chart) requests are now streamed the same way, so the
+    // client sees tokens arrive as soon as the model starts generating.
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
