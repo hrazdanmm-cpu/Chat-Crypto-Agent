@@ -47,7 +47,6 @@ export default async function handler(req) {
 
     messages.push({ role: 'user', content: userContent });
 
-    // Ուղղակի fetch հարցում NVIDIA-ին (առանց openai գրադարանի կարիքի)
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -55,7 +54,7 @@ export default async function handler(req) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'nvidia/nvidia-nemotron-nano-9b-v2',
+        model: 'meta/llama-3.1-8b-instruct', // Աշխատող և հասանելի մոդել NVIDIA-ից
         messages: messages,
         temperature: 0.2,
         top_p: 0.7,
