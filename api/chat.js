@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 
 export const config = {
   runtime: 'edge',
@@ -14,60 +14,77 @@ export default async function handler(req) {
 
   try {
     const { message, language, history, image } = await req.json();
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.NVIDIA_API_KEY;
 
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'GEMINI_API_KEY is not configured on Vercel' }),
+        JSON.stringify({ error: 'NVIDIA_API_KEY is not configured on Vercel' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    // Օգտագործում ենք ճիշտ և հասանելի gemini-3.5-flash մոդելը
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+    const nvidiaClient = new OpenAI({
+      apiKey: apiKey,
+      baseURL: 'https://integrate.api.nvidia.com/v1',
+    });
 
-    const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. Target Language for response: ${language || 'hy'}. Important rules: 1. Provide concise, clear, and high-quality technical and market analysis for cryptocurrencies. 2. If the user talks in Armenian (even in Latin script), respond in Armenian script (հայատառ). 3. Always include a short disclaimer that this is educational content, not financial advice.`;
-    
-    const contents = [];
-    
-    // System instruction mapping
-    contents.push({ role: 'user', parts: [{ text: systemPrompt }] });
-    contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow all instructions and perform as Chat Crypto.' }] });
+    const targetLanguage = language || 'hy';
+    const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. Target Language for response: ${targetLanguage}. Important rules: 1. Provide concise, clear, and high-quality technical and market analysis for cryptocurrencies. 2. If the user talks in Armenian (even in Latin script), respond in Armenian script (հայատառ). 3. Always include a short disclaimer that this is educational content, not financial advice.`;
 
-    // History mapping
+    const messages = [
+      { role: 'system', content: systemPrompt }
+    ];
+
     if (Array.isArray(history)) {
       history.forEach((msg) => {
-        contents.push({
-          role: msg.role === 'user' ? 'user' : 'model',
-          parts: [{ text: msg.text }],
+        messages.push({
+          role: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.text,
         });
       });
     }
 
-    // Current Prompt with Image support
-    const currentParts = [{ text: message }];
+    // Նկարների կամ տեքստի ավելացում ընթացիկ հաղորդագրության համար
+    let userContent = message;
     if (image && typeof image === 'string' && image.includes(';base64,')) {
-      const match = image.match(/^data:(image\/[a-zA-Z\+]+);base64,(.+)$/);
-      if (match) {
-        currentParts.push({
-          inlineData: {
-            mimeType: match[1],
-            data: match[2],
-          },
-        });
-      }
+      userContent = [
+        { type: 'text', text: message || 'Analyze this image' },
+        { type: 'image_url', image_url: { url: image } }
+      ];
     }
 
-    contents.push({ role: 'user', parts: currentParts });
+    messages.push({ role: 'user', content: userContent });
 
-    // Model generation call
-    const result = await model.generateContent({ contents });
-    const responseText = result.response.text();
+    const completion = await nvidiaClient.chat.completions.create({
+      model: 'nvidia/nvidia-nemotron-nano-9b-v2',
+      messages: messages,
+      temperature: 0.2,
+      top_p: 0.7,
+      max_tokens: 1024,
+      stream: true,
+    });
 
-    return new Response(JSON.stringify({ reply: responseText }), {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of completion) {
+          const text = chunk.choices[0]?.delta?.content || '';
+          if (text) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: text })}\n\n`));
+          }
+        }
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {
