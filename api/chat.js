@@ -1,5 +1,3 @@
-import OpenAI from 'openai';
-
 export const config = {
   runtime: 'edge',
 };
@@ -23,11 +21,6 @@ export default async function handler(req) {
       );
     }
 
-    const nvidiaClient = new OpenAI({
-      apiKey: apiKey,
-      baseURL: 'https://integrate.api.nvidia.com/v1',
-    });
-
     const targetLanguage = language || 'hy';
     const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. Target Language for response: ${targetLanguage}. Important rules: 1. Provide concise, clear, and high-quality technical and market analysis for cryptocurrencies. 2. If the user talks in Armenian (even in Latin script), respond in Armenian script (հայատառ). 3. Always include a short disclaimer that this is educational content, not financial advice.`;
 
@@ -44,7 +37,6 @@ export default async function handler(req) {
       });
     }
 
-    // Նկարների կամ տեքստի ավելացում ընթացիկ հաղորդագրության համար
     let userContent = message;
     if (image && typeof image === 'string' && image.includes(';base64,')) {
       userContent = [
@@ -55,26 +47,65 @@ export default async function handler(req) {
 
     messages.push({ role: 'user', content: userContent });
 
-    const completion = await nvidiaClient.chat.completions.create({
-      model: 'nvidia/nvidia-nemotron-nano-9b-v2',
-      messages: messages,
-      temperature: 0.2,
-      top_p: 0.7,
-      max_tokens: 1024,
-      stream: true,
+    // Ուղղակի fetch հարցում NVIDIA-ին (առանց openai գրադարանի կարիքի)
+    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'nvidia/nvidia-nemotron-nano-9b-v2',
+        messages: messages,
+        temperature: 0.2,
+        top_p: 0.7,
+        max_tokens: 1024,
+        stream: true,
+      }),
     });
 
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`NVIDIA API error: ${errText}`);
+    }
+
     const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
     const stream = new ReadableStream({
       async start(controller) {
-        for await (const chunk of completion) {
-          const text = chunk.choices[0]?.delta?.content || '';
-          if (text) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: text })}\n\n`));
+        const reader = response.body.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('data: ')) {
+                const dataStr = trimmed.replace('data: ', '');
+                if (dataStr === '[DONE]') continue;
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  const text = parsed.choices?.[0]?.delta?.content || '';
+                  if (text) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: text })}\n\n`));
+                  }
+                } catch (e) {
+                  // անտեսել անավարտ JSON-ները
+                }
+              }
+            }
           }
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        } catch (err) {
+          controller.error(err);
+        } finally {
+          controller.close();
         }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
       },
     });
 
