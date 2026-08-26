@@ -94,16 +94,37 @@
   function detect(s){return /[\u0530-\u058f]/.test(s)||latinArmenian(s)?'hy':/[а-яё]/i.test(s)?'ru':'en'}
 
   /* ---------- Text-to-speech ---------- */
-  let cachedVoices=[],activeSpeechButton=null;
+  let cachedVoices=[],activeSpeechButton=null,resumeTimer=null;
   function loadVoices(){if('speechSynthesis'in window)cachedVoices=speechSynthesis.getVoices()}
   if('speechSynthesis'in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices}
   const SPEECH_LOCALE={en:'en-US',ru:'ru-RU',hy:'hy-AM',tr:'tr-TR',es:'es-ES',fr:'fr-FR',de:'de-DE',pt:'pt-PT',it:'it-IT',pl:'pl-PL',nl:'nl-NL',uk:'uk-UA',ar:'ar-SA',fa:'fa-IR',hi:'hi-IN',id:'id-ID',vi:'vi-VN',zh:'zh-CN',ja:'ja-JP',ko:'ko-KR'};
   function pickVoice(langTag){const voices=cachedVoices.length?cachedVoices:(speechSynthesis.getVoices()||[]);const base=langTag.slice(0,2).toLowerCase();return voices.find(v=>v.lang.toLowerCase()===langTag.toLowerCase())||voices.find(v=>v.lang.toLowerCase().startsWith(base))||null}
   function setSpeechButtonState(btn,playing){if(!btn)return;const icon=btn.querySelector('.listen-icon'),label=btn.querySelector('.listen-label');btn.dataset.playing=playing?'1':'0';if(playing){icon.textContent='⏸';label.textContent='կանգնեցնել';btn.classList.add('text-mint','border-mint/50')}else{icon.textContent='🔊';label.textContent='լսել';btn.classList.remove('text-mint','border-mint/50')}}
-  function speak(text,force=false,btn=null){if(!text||!('speechSynthesis'in window))return;if(!voice&&!force)return;speechSynthesis.cancel();if(activeSpeechButton&&activeSpeechButton!==btn)setSpeechButtonState(activeSpeechButton,false);const langTag=SPEECH_LOCALE[lang]||(detect(text)==='hy'?'hy-AM':detect(text)==='ru'?'ru-RU':'en-US');const speakNow=()=>{const u=new SpeechSynthesisUtterance(text);u.lang=langTag;const v=pickVoice(langTag);if(v)u.voice=v;if(btn){activeSpeechButton=btn;setSpeechButtonState(btn,true);u.onend=()=>{setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null};u.onerror=()=>{setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null}}speechSynthesis.speak(u)};
-    /* Chrome sometimes drops an utterance queued immediately after cancel() — a short delay makes it reliable */
-    setTimeout(speakNow,60)}
-  function toggleSpeak(btn,text){if(activeSpeechButton===btn&&speechSynthesis.speaking){speechSynthesis.cancel();setSpeechButtonState(btn,false);activeSpeechButton=null;return}speak(text,true,btn)}
+  function stopResumeWatch(){if(resumeTimer){clearInterval(resumeTimer);resumeTimer=null}}
+  function speak(text,force=false,btn=null){
+    if(!text||!('speechSynthesis'in window))return;
+    if(!voice&&!force)return;
+    // IMPORTANT: this must run synchronously inside the click handler (no setTimeout/await
+    // before speak()) — mobile Safari/Chrome silently drop speak() calls that aren't tied
+    // directly to a user gesture, which is why the button previously did nothing.
+    if(speechSynthesis.speaking||speechSynthesis.pending)speechSynthesis.cancel();
+    stopResumeWatch();
+    if(activeSpeechButton&&activeSpeechButton!==btn)setSpeechButtonState(activeSpeechButton,false);
+    const langTag=SPEECH_LOCALE[lang]||(detect(text)==='hy'?'hy-AM':detect(text)==='ru'?'ru-RU':'en-US');
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang=langTag;
+    const v=pickVoice(langTag);if(v)u.voice=v;
+    if(btn){
+      activeSpeechButton=btn;setSpeechButtonState(btn,true);
+      u.onend=()=>{stopResumeWatch();setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null};
+      u.onerror=()=>{stopResumeWatch();setSpeechButtonState(btn,false);if(activeSpeechButton===btn)activeSpeechButton=null};
+    }
+    speechSynthesis.speak(u);
+    // Chrome has a long-standing bug where speech auto-pauses ~15s into long utterances;
+    // nudging resume() periodically while speaking keeps long answers playing to the end.
+    resumeTimer=setInterval(()=>{if(speechSynthesis.speaking&&speechSynthesis.paused)speechSynthesis.resume();else if(!speechSynthesis.speaking)stopResumeWatch()},4000);
+  }
+  function toggleSpeak(btn,text){if(activeSpeechButton===btn&&(speechSynthesis.speaking||speechSynthesis.pending)){stopResumeWatch();speechSynthesis.cancel();setSpeechButtonState(btn,false);activeSpeechButton=null;return}speak(text,true,btn)}
   function addListenButton(b,text){const button=document.createElement('button');button.className='listen-btn mt-2 flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs text-slate-300 hover:bg-panel2 transition';button.dataset.playing='0';button.innerHTML='<span class="listen-icon">🔊</span><span class="listen-label">լսել</span>';button.onclick=()=>toggleSpeak(button,text);b.append(document.createElement('br'),button);return button}
 
   /* ---------- Microphone permission (request once, reuse afterwards) ---------- */
