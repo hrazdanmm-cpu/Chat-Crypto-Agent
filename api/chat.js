@@ -30,8 +30,8 @@ Target language for your reply: ${targetLanguage} (if the user writes Armenian i
 
 Response rules — follow all of them strictly:
 1. Answer the user's actual question directly and specifically. Do not restate the question, do not pad with generic introductions ("Great question!", "As an AI..." etc.), and do not drift into unrelated coins, topics, or filler.
-2. Be concise and structured: short paragraphs or bullet points, concrete numbers/levels/reasoning where relevant, no repetition.
-3. Base your analysis only on information in the current message (including any attached chart/screenshot image) and the conversation history provided — never invent live prices, exact percentages, or news you don't actually have; speak in terms of trend, structure, and risk instead when you lack live data.
+2. Write like a professional technical/market analyst, not a generic chatbot. Where relevant to the question, structure the analysis around: overall trend/market structure, key support & resistance levels, momentum/volume behavior, and concrete risk considerations (invalidation level, volatility, position sizing) — using short paragraphs or bullet points, not one flat paragraph. Use precise trading/TA terminology naturally (trend, structure, support/resistance, momentum, volume, liquidity, invalidation, risk/reward) instead of vague language.
+3. Base your analysis only on information in the current message (including any attached chart/screenshot image) and the conversation history provided — never invent live prices, exact percentages, or news you don't actually have; when you lack live data, reason explicitly in terms of trend, structure, and risk instead, and say so briefly rather than guessing numbers.
 4. If the request is ambiguous (e.g. no coin specified), ask ONE short clarifying question instead of guessing broadly.
 5. Stay strictly focused on crypto markets, technical/chart analysis, and trading risk. Do not add a "not financial advice" / educational-only disclaimer line — omit it entirely.`;
 
@@ -72,15 +72,20 @@ Response rules — follow all of them strictly:
     // SPEED: "thinking" is explicitly disabled below — GLM-4.5+ models otherwise run an
     // internal reasoning pass by default, which adds several seconds of latency before
     // any visible text streams out and tends to produce longer, more meandering answers.
-    // We also now ALWAYS stream (text and image requests alike, see below), so the first
-    // tokens reach the client as soon as the model starts generating instead of the
-    // browser waiting for the entire reply to finish.
+    // Text-only requests are streamed (see stream:true below) so the first tokens reach
+    // the client as soon as the model starts generating, instead of the browser waiting
+    // for the entire reply to finish.
     //
     // IMAGE / CHART ANALYSIS: "glm-4.5-flash" is text-only, so image_url content is
-    // rejected with a 500 by that model. "glm-4.5v" is the vision-capable model on the
-    // same Coding Plan and understands the same OpenAI-style
+    // rejected by that model. "glm-4.5v" is the vision-capable model on the same Coding
+    // Plan and understands the same OpenAI-style
     // {type:"image_url", image_url:{url: "data:image/...;base64,..."}} content block,
     // so we switch to it automatically whenever an image/chart screenshot is attached.
+    //
+    // NOTE: glm-4.5v is called WITHOUT streaming (stream:false below). In testing,
+    // streaming the vision model on this endpoint produced no output / silent failures,
+    // so image/chart requests use a plain (non-streamed) request-response call instead —
+    // slightly higher latency than text, but the analysis actually comes back.
     const model = hasImage ? 'glm-4.5v' : 'glm-4.5-flash';
     const response = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions', {
       method: 'POST',
@@ -95,7 +100,7 @@ Response rules — follow all of them strictly:
         temperature: 0.4,               // ցածր/չափավոր՝ կենտրոնացված, կանխատեսելի պատասխանների համար
         top_p: 0.85,
         max_tokens: hasImage ? 700 : 600, // մի փոքր ավելի կարճ տեքստային պատասխաններ՝ ավելի արագ ավարտվող stream-ի համար
-        stream: true,                    // now streamed for BOTH text and image requests, for fast first-token latency
+        stream: !hasImage,               // text: streamed for low first-token latency. images: non-streamed (see NOTE above) so analysis reliably comes back
       }),
     });
 
@@ -119,8 +124,19 @@ Response rules — follow all of them strictly:
       throw new Error(`Zhipu AI API error: ${errText}`);
     }
 
-    // Both text and image (chart) requests are now streamed the same way, so the
-    // client sees tokens arrive as soon as the model starts generating.
+    // Image/chart requests were sent non-streamed above (see NOTE near the model
+    // selection), so just relay the plain JSON reply as-is.
+    if (hasImage) {
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content || '';
+      return new Response(JSON.stringify({ reply }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Text requests are streamed, so the client sees tokens arrive as soon as the
+    // model starts generating instead of waiting for the full reply.
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
