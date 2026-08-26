@@ -22,14 +22,25 @@ export default async function handler(req) {
     }
 
     const targetLanguage = language || 'hy';
-    const systemPrompt = `You are Chat Crypto, an expert AI crypto analyst. Target Language for response: ${targetLanguage}. Important rules: 1. Provide concise, clear, and high-quality technical and market analysis for cryptocurrencies. 2. If the user talks in Armenian (even in Latin script), respond in Armenian script (հայատառ). 3. Always include a short disclaimer that this is educational content, not financial advice.`;
+    const systemPrompt = `You are Chat Crypto, a focused AI crypto analyst.
+
+Target language for your reply: ${targetLanguage} (if the user writes Armenian in Latin script, still reply in Armenian script — հայատառ).
+
+Response rules — follow all of them strictly:
+1. Answer the user's actual question directly and specifically. Do not restate the question, do not pad with generic introductions ("Great question!", "As an AI..." etc.), and do not drift into unrelated coins, topics, or disclaimers-heavy filler.
+2. Be concise and structured: short paragraphs or bullet points, concrete numbers/levels/reasoning where relevant, no repetition.
+3. Base your analysis only on information in the current message and the conversation history provided — never invent live prices, exact percentages, or news you don't actually have; speak in terms of trend, structure, and risk instead when you lack live data.
+4. If the request is ambiguous (e.g. no coin specified), ask ONE short clarifying question instead of guessing broadly.
+5. End with a single short line noting this is educational content, not financial advice — one line only, not a paragraph.`;
 
     const messages = [
       { role: 'system', content: systemPrompt }
     ];
 
     if (Array.isArray(history)) {
-      history.forEach((msg) => {
+      // Keep only the last few turns — long history both slows the request down
+      // and gives the model more irrelevant context to get distracted by.
+      history.slice(-6).forEach((msg) => {
         messages.push({
           role: msg.role === 'user' ? 'user' : 'assistant',
           content: msg.text,
@@ -62,6 +73,13 @@ export default async function handler(req) {
     // If you later switch to a normal (non-Coding-Plan) API key from
     // open.bigmodel.cn, use https://open.bigmodel.cn/api/paas/v4/chat/completions
     // and a model like "glm-4-flash-250414" or "glm-4.7-flash" instead.
+    //
+    // PERFORMANCE NOTE: GLM-4.5+ models run an internal "thinking" / reasoning pass
+    // by default. That reasoning pass is what was causing both problems reported —
+    // it adds several extra seconds of latency before any visible text streams out,
+    // and for a short, direct Q&A chatbot like this one it tends to produce longer,
+    // more meandering answers. Explicitly disabling it below fixes both: replies
+    // start streaming almost immediately and stay on-topic.
     const response = await fetch('https://api.z.ai/api/coding/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
@@ -71,9 +89,10 @@ export default async function handler(req) {
       body: JSON.stringify({
         model: 'glm-4.5-flash', // Coding Plan-ում հասանելի, արագ մոդել
         messages: messages,
-        temperature: 0.2,
-        top_p: 0.7,
-        max_tokens: 1024,
+        thinking: { type: 'disabled' }, // անջատում ենք reasoning-ը՝ արագության և կենտրոնացվածության համար
+        temperature: 0.4,               // ցածր/չափավոր՝ կենտրոնացված, կանխատեսելի պատասխանների համար
+        top_p: 0.85,
+        max_tokens: 700,                // բավարար մանրամասն, բայց ոչ ջրիկ պատասխանների համար
         stream: true,
       }),
     });
@@ -89,16 +108,18 @@ export default async function handler(req) {
     const stream = new ReadableStream({
       async start(controller) {
         const reader = response.body.getReader();
+        let buffer = ''; // holds any incomplete line across chunk boundaries
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-              const trimmed = line.trim();
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? ''; // last element may be an incomplete line — keep it for next read
+
+            for (const raw of lines) {
+              const trimmed = raw.trim();
               if (trimmed.startsWith('data: ')) {
                 const dataStr = trimmed.replace('data: ', '');
                 if (dataStr === '[DONE]') continue;
