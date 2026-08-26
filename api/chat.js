@@ -12,11 +12,11 @@ export default async function handler(req) {
 
   try {
     const { message, language, history, image } = await req.json();
-    const apiKey = process.env.NVIDIA_API_KEY;
+    const apiKey = process.env.ZHIPU_API_KEY;
 
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'NVIDIA_API_KEY is not configured on Vercel' }),
+        JSON.stringify({ error: 'ZHIPU_API_KEY is not configured on Vercel' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -47,14 +47,17 @@ export default async function handler(req) {
 
     messages.push({ role: 'user', content: userContent });
 
-    const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    // Zhipu AI (GLM) — OpenAI-compatible /chat/completions endpoint.
+    // NOTE: glm-4-flash is text-only. If users regularly attach images,
+    // switch the model below to a vision-capable one (e.g. "glm-4v-flash").
+    const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'meta/llama-3.1-8b-instruct', // Աշխատող և հասանելի մոդել NVIDIA-ից
+        model: 'glm-4-flash', // Zhipu AI (GLM) մոդել
         messages: messages,
         temperature: 0.2,
         top_p: 0.7,
@@ -65,7 +68,7 @@ export default async function handler(req) {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`NVIDIA API error: ${errText}`);
+      throw new Error(`Zhipu AI API error: ${errText}`);
     }
 
     const encoder = new TextEncoder();
