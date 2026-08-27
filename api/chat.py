@@ -1,18 +1,28 @@
 """
-Chat Crypto backend — NVIDIA NIM (meta/llama-3.2-90b-vision-instruct).
+Chat Crypto backend — NVIDIA NIM (meta/llama-3.2-11b-vision-instruct).
 
 Deploys as a Vercel Python Function (file-based /api handler).
 
 Env var required on Vercel: NVIDIA_API_KEY  (build.nvidia.com -> model -> Get API Key)
 
-Fixes in this version:
-  1. Images over NVIDIA's ~180,000-char inline base64 limit are now uploaded via the
+  IMPORTANT: Set NVIDIA_API_KEY in Vercel Project Settings -> Environment Variables.
+  Never hardcode the key in this file — if this file is ever pushed to a public repo
+  or shared, a hardcoded key gets scraped and abused within minutes. Environment
+  variables keep the key off of disk/git entirely and let you rotate it without
+  touching code.
+
+Model: meta/llama-3.2-11b-vision-instruct — smaller/faster vision model than the 90B
+variant, chosen for lower latency on both text and image requests while still
+supporting multimodal (image + text) input.
+
+Fixes carried over from the previous version:
+  1. Images over NVIDIA's ~180,000-char inline base64 limit are uploaded via the
      NVCF Assets API and referenced by asset_id instead of being silently rejected/
-     mishandled — this is what was causing "doesn't read the image" for normal-sized
+     mishandled — this is what caused "doesn't read the image" for normal-sized
      phone screenshots (which are almost always well over 180KB).
-  2. The "who are you" identity line is now strictly gated: the model is instructed to
-     use it ONLY for literal identity questions, and explicitly told never to use it as
-     a fallback for images, price questions, or anything else it's unsure about.
+  2. The "who are you" identity line is strictly gated: the model is instructed to
+     use it ONLY for literal identity questions, and explicitly told never to use it
+     as a fallback for images, price questions, or anything else it's unsure about.
   3. Live prices: when the user's message mentions a recognized coin, we fetch the
      current price/24h change from Binance's public API and hand it to the model as
      verified data, so price questions get real numbers instead of "I don't know".
@@ -28,7 +38,7 @@ import requests
 
 NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVCF_ASSETS_URL = "https://api.nvcf.nvidia.com/v2/nvcf/assets"
-MODEL = "meta/llama-3.2-90b-vision-instruct"
+MODEL = "meta/llama-3.2-11b-vision-instruct"
 INLINE_B64_LIMIT = 170_000  # NVIDIA's hard cap is 180,000 chars; keep a safety margin
 
 SYSTEM_PROMPT_TEMPLATE = """You are a deep, focused crypto-market analysis assistant.
