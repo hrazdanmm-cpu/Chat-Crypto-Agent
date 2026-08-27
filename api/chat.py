@@ -6,26 +6,16 @@ Deploys as a Vercel Python Function (file-based /api handler).
 Env var required on Vercel: NVIDIA_API_KEY  (build.nvidia.com -> model -> Get API Key)
 
   IMPORTANT: Set NVIDIA_API_KEY in Vercel Project Settings -> Environment Variables.
-  Never hardcode the key in this file — if this file is ever pushed to a public repo
-  or shared, a hardcoded key gets scraped and abused within minutes. Environment
-  variables keep the key off of disk/git entirely and let you rotate it without
-  touching code.
+  Never hardcode the key in this file.
 
-Model: meta/llama-3.2-11b-vision-instruct — smaller/faster vision model than the 90B
-variant, chosen for lower latency on both text and image requests while still
-supporting multimodal (image + text) input.
+Model: meta/llama-3.2-11b-vision-instruct
 
-Fixes carried over from the previous version:
-  1. Images over NVIDIA's ~180,000-char inline base64 limit are uploaded via the
-     NVCF Assets API and referenced by asset_id instead of being silently rejected/
-     mishandled — this is what caused "doesn't read the image" for normal-sized
-     phone screenshots (which are almost always well over 180KB).
-  2. The "who are you" identity line is strictly gated: the model is instructed to
-     use it ONLY for literal identity questions, and explicitly told never to use it
-     as a fallback for images, price questions, or anything else it's unsure about.
-  3. Live prices: when the user's message mentions a recognized coin, we fetch the
-     current price/24h change from Binance's public API and hand it to the model as
-     verified data, so price questions get real numbers instead of "I don't know".
+--- CORS NOTE (added) ---
+This file now sends Access-Control-Allow-Origin so that the Futures Calculator
+Mini App (a different Vercel deployment/domain) can call this endpoint directly
+from the embedded Chat Crypto Agent view. Without these headers the browser
+blocks the cross-origin POST with a CORS error, which is what caused the
+"server error" when the chat agent was opened from inside the calculator.
 """
 
 import base64
@@ -40,6 +30,11 @@ NVIDIA_CHAT_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 NVCF_ASSETS_URL = "https://api.nvcf.nvidia.com/v2/nvcf/assets"
 MODEL = "meta/llama-3.2-11b-vision-instruct"
 INLINE_B64_LIMIT = 170_000  # NVIDIA's hard cap is 180,000 chars; keep a safety margin
+
+# Set this to your Futures Calculator's real domain instead of "*" once you
+# know it (e.g. "https://your-futures-calculator.vercel.app") for tighter
+# security. "*" works fine for this endpoint since it carries no cookies/auth.
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 
 SYSTEM_PROMPT_TEMPLATE = """You are a deep, focused crypto-market analysis assistant.
 
@@ -163,7 +158,6 @@ def upload_image_asset(image_bytes: bytes, content_type: str, api_key: str) -> s
 
 
 def build_messages(message: str, lang: str, history: list, image: str | None):
-    # Live price context (checked against the current message + last user turn).
     all_text = message + " " + " ".join(m.get("text", "") for m in (history or [])[-2:])
     symbols = detect_symbols(all_text)
     price_lines = fetch_live_prices(symbols) if symbols else []
@@ -184,11 +178,24 @@ def build_messages(message: str, lang: str, history: list, image: str | None):
 
 
 class handler(BaseHTTPRequestHandler):
+
+    def _cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def do_OPTIONS(self):
+        # Preflight request the browser sends before the actual cross-origin POST.
+        self.send_response(204)
+        self._cors_headers()
+        self.end_headers()
+
     def _json(self, status: int, payload: dict):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -221,22 +228,17 @@ class handler(BaseHTTPRequestHandler):
             content_type = header.replace("data:", "") or "image/jpeg"
 
             if len(b64data) <= INLINE_B64_LIMIT:
-                # Small enough to send inline, as a typed content block.
                 user_content = [
                     {"type": "image_url", "image_url": {"url": image}},
                     {"type": "text", "text": message or "Analyze this chart/image"},
                 ]
             else:
-                # Over NVIDIA's inline limit: upload to NVCF assets and reference by id.
                 try:
                     image_bytes = base64.b64decode(b64data)
                     asset_id = upload_image_asset(image_bytes, content_type, api_key)
                 except (requests.RequestException, KeyError, ValueError):
                     self._json(200, {"reply": IMAGE_ERROR_TEXT.get(lang, IMAGE_ERROR_TEXT["en"])})
                     return
-                # Per NVIDIA's asset format, the message content must be a plain string
-                # with an <img> tag referencing the asset, and the id must also be
-                # echoed in the NVCF-INPUT-ASSET-REFERENCES header.
                 user_content = f'<img src="data:{content_type};asset_id,{asset_id}" /> {message or "Analyze this chart/image"}'
                 extra_headers["NVCF-INPUT-ASSET-REFERENCES"] = asset_id
         else:
@@ -244,7 +246,7 @@ class handler(BaseHTTPRequestHandler):
 
         messages.append({"role": "user", "content": user_content})
 
-        stream = not has_image  # keep image requests non-streamed: simplest, most reliable
+        stream = not has_image
         payload = {
             "model": MODEL,
             "messages": messages,
@@ -289,6 +291,7 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self._cors_headers()
         self.end_headers()
         try:
             for line in upstream.iter_lines(decode_unicode=True):
