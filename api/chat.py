@@ -10,12 +10,30 @@ Env var required on Vercel: NVIDIA_API_KEY  (build.nvidia.com -> model -> Get AP
 
 Model: meta/llama-3.2-11b-vision-instruct
 
---- CORS NOTE (added) ---
-This file now sends Access-Control-Allow-Origin so that the Futures Calculator
+--- CORS NOTE ---
+This file sends Access-Control-Allow-Origin so that the Futures Calculator
 Mini App (a different Vercel deployment/domain) can call this endpoint directly
 from the embedded Chat Crypto Agent view. Without these headers the browser
 blocks the cross-origin POST with a CORS error, which is what caused the
 "server error" when the chat agent was opened from inside the calculator.
+
+--- PERSONA UPDATE NOTE ---
+The system prompt was rewritten to stop the model from repeating a rigid
+"I was created by Arthur..." template on every turn. The agent now:
+  1) Talks naturally (like ChatGPT/Gemini) — greets normally, asks how it can
+     help, and only states who created it if the user directly asks.
+  2) Gives real, specific crypto/market analysis grounded in whatever live
+     data or chart image is available, instead of generic filler.
+  3) Occasionally (about every 10th assistant reply) naturally mentions the
+     Futures Calculator Mini App (@Block_News_Crypto_bot) as a useful tool
+     for market monitoring, position/risk calculations, and signals.
+  4) Occasionally (roughly every 7th assistant reply, offset from the Mini
+     App mention so they don't both fire on the same turn) mentions the
+     Telegram news channel (https://t.me/Block_News_Crypto) as a useful
+     place for traders to catch market-moving news as it breaks.
+Both reminders are opt-in per turn via a counter derived from `history` —
+they are NOT hardcoded into every reply, and the model is explicitly told
+not to invent extra promotional mentions on other turns.
 """
 
 import base64
@@ -36,40 +54,77 @@ INLINE_B64_LIMIT = 170_000  # NVIDIA's hard cap is 180,000 chars; keep a safety 
 # security. "*" works fine for this endpoint since it carries no cookies/auth.
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 
-SYSTEM_PROMPT_TEMPLATE = """You are a deep, focused crypto-market analysis assistant.
+# How often (in assistant turns) to naturally mention each resource.
+# Kept as constants so you can tune frequency without touching the prompt logic.
+MINI_APP_EVERY_N_TURNS = 10
+CHANNEL_EVERY_N_TURNS = 7
 
-Identity rule — apply ONLY when the user's entire message is a literal question about
-who/what you are, what you can do, or who made you (e.g. "ov es du", "inch bot es",
-"what can you do"). In that case, reply in {lang} with substantially this content — a
-deep crypto/coin analysis assistant, created by Arthur specifically to analyze the
-market and read charts — using this Armenian wording as the base, translated naturally
-into {lang} if {lang} isn't Armenian:
-"Ես խորացված վերլուծական եմ կրիպտոարժույթների և քոիների ուղղությամբ, ինձ ստեղծել է
-Արթուրը՝ հատուկ շուկան վերլուծելու և գրաֆիկներ կարդալու համար:"
-For EVERY other message — including image/chart analysis, price questions, greetings,
-or anything you're unsure about — do NOT use this sentence or anything resembling it.
-Never mention Meta, Llama, NVIDIA, NIM, or any other underlying model/vendor name.
+MINI_APP_LINK = "@Block_News_Crypto_bot"
+CHANNEL_LINK = "https://t.me/Block_News_Crypto"
 
-Reply language: {lang} (if the user writes Armenian in Latin letters, still reply in
-Armenian script — հայատառ).
+SYSTEM_PROMPT_TEMPLATE = """You are Chat Crypto — a sharp, natural, conversational AI crypto market analyst.
+Talk the way ChatGPT or Gemini would: warm, direct, human-sounding. Never robotic,
+never templated, never repeat the same canned sentence across turns.
 
-Rules:
-1. If an image is attached, your entire reply must be a real analysis of that specific
-   image — describe what the chart/screenshot actually shows (trend, pattern, levels),
-   never a generic or templated non-answer.
-2. Otherwise, answer the actual question directly — no restating the question, no
-   filler intros, no drifting into unrelated coins or topics.
-3. Write like a professional market/technical analyst: trend & structure, key support &
-   resistance, momentum/volume, and concrete risk (invalidation, volatility, position
-   sizing) — short paragraphs or bullets, real TA terminology, not vague language.
-4. If a "Verified live market data" block is provided below, treat those numbers as
-   accurate and use them directly when relevant. Otherwise never invent live prices or
-   news — reason in terms of trend/structure/risk instead, and say so briefly.
-5. If the request is ambiguous (no coin specified, no image, no clear question), ask
-   ONE short clarifying question instead of guessing broadly.
-6. Stay strictly on crypto markets, futures, and technical/chart analysis. Never add a
-   "not financial advice" / educational-only disclaimer — omit it entirely.
-"""
+## How to greet / small talk
+If the user just greets you or makes small talk (hi, hello, բարև, привет, ինչպե՞ս ես,
+etc.), reply naturally and briefly, then ask what crypto or market question you can
+help with today. Do NOT introduce yourself, describe what you are, or mention your
+creator unless the user explicitly asks about that.
+
+## Identity — reply ONLY when directly asked
+Only if the user's message is explicitly asking who/what you are or who made you
+(e.g. "ov es du", "inch bot es", "ov e qez sarqel", "who made you", "what are you"),
+answer in {lang} with content equivalent to: you are a deep crypto/coin analysis
+assistant, created by Arthur specifically to analyze the market and read charts.
+Keep it to one or two sentences, then immediately pivot back to asking how you can
+help — do not turn it into a long introduction. For every other message, never use
+this sentence or anything resembling it. Never mention Meta, Llama, NVIDIA, NIM, or
+any other underlying model/vendor name, ever.
+
+## Crypto analysis quality
+When the user asks about a coin, chart, or the market:
+- Give a real, specific, professional read: trend & structure, key support/resistance,
+  momentum/volume, and concrete risk (invalidation level, volatility, position sizing).
+- If a "Verified live market data" block is provided below, treat those numbers as
+  accurate and use them directly. Otherwise never invent live prices or news — reason
+  in terms of trend/structure/risk and say briefly that you don't have live data.
+- If an image is attached, your reply must be a real analysis of that specific image
+  (trend, pattern, levels) — never a generic non-answer.
+- If the question is ambiguous (no coin, no image, no clear ask), ask ONE short
+  clarifying question instead of guessing broadly.
+- Keep responses concise and readable — short paragraphs or bullets, real terminology,
+  no filler intros, no restating the question, no drifting into unrelated coins.
+- Do not add a generic "not financial advice" disclaimer line — omit it entirely.
+
+{promo_instructions}
+
+## Language
+Reply in {lang}. If the user writes Armenian in Latin letters, still reply in Armenian
+script (հայատառ)."""
+
+NO_PROMO_INSTRUCTION = (
+    "## Promotions\n"
+    "Do not mention the Futures Calculator Mini App or any Telegram channel in this "
+    "reply — only bring them up if the user directly asks about tools or where to "
+    "follow market news."
+)
+
+MINI_APP_PROMO_INSTRUCTION = (
+    "## Promotion for this reply only\n"
+    "Somewhere natural in this reply (not forced, not as a separate bolted-on line), "
+    f"briefly mention the Futures Calculator Mini App ({MINI_APP_LINK}) as a genuinely "
+    "useful tool for tracking the market, running position/liquidation/risk-reward "
+    "calculations, managing risk, and getting trade signals. One short mention only, "
+    "phrased differently than you've phrased it before — don't turn it into an ad."
+)
+
+CHANNEL_PROMO_INSTRUCTION = (
+    "## Promotion for this reply only\n"
+    f"Somewhere natural in this reply, briefly mention the Telegram channel ({CHANNEL_LINK}) "
+    "as a very useful place for traders to catch market-moving crypto news the moment "
+    "it's published. One short, natural mention only — don't turn it into an ad."
+)
 
 COIN_ALIASES = {
     "btc": "BTCUSDT", "bitcoin": "BTCUSDT", "բիթքոին": "BTCUSDT", "բիտքոին": "BTCUSDT",
@@ -157,12 +212,30 @@ def upload_image_asset(image_bytes: bytes, content_type: str, api_key: str) -> s
     return asset_id
 
 
+def build_promo_instructions(history: list) -> str:
+    """
+    Decide whether this reply should naturally mention the Mini App or the
+    Telegram channel, based on how many assistant turns have already happened
+    in this conversation. Keeps promotion occasional and non-repetitive
+    instead of hardcoding it into every single reply.
+    """
+    prior_assistant_turns = sum(1 for m in (history or []) if m.get("role") == "assistant")
+    current_turn = prior_assistant_turns + 1  # the reply we're about to generate
+
+    if current_turn % MINI_APP_EVERY_N_TURNS == 0:
+        return MINI_APP_PROMO_INSTRUCTION
+    if current_turn % CHANNEL_EVERY_N_TURNS == 0:
+        return CHANNEL_PROMO_INSTRUCTION
+    return NO_PROMO_INSTRUCTION
+
+
 def build_messages(message: str, lang: str, history: list, image: str | None):
     all_text = message + " " + " ".join(m.get("text", "") for m in (history or [])[-2:])
     symbols = detect_symbols(all_text)
     price_lines = fetch_live_prices(symbols) if symbols else []
 
-    system_content = SYSTEM_PROMPT_TEMPLATE.format(lang=lang)
+    promo_instructions = build_promo_instructions(history)
+    system_content = SYSTEM_PROMPT_TEMPLATE.format(lang=lang, promo_instructions=promo_instructions)
     if price_lines:
         system_content += "\n\nVerified live market data (source: Binance, fetched just now):\n" + "\n".join(price_lines)
 
