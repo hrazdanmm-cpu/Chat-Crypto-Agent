@@ -11,13 +11,14 @@
   <!--
     BACKEND NOTE (server-side, not part of this file):
     This client talks to your own backend at /api/chat and /api/coins.
-    /api/chat is now a Python Vercel Function (see api/chat.py) that calls
-    NVIDIA NIM instead of Zhipu/GLM:
+    /api/chat is a Python Vercel Function (see api/chat.py) that calls NVIDIA NIM:
       Endpoint : https://integrate.api.nvidia.com/v1/chat/completions
-      Model    : meta/llama-3.2-90b-vision-instruct  (handles text AND image/chart input)
+      Model    : meta/llama-3.2-11b-vision-instruct  (fast vision model; handles text
+                 AND image/chart input)
       Auth     : Authorization: Bearer ${NVIDIA_API_KEY}
-    Make sure the NVIDIA_API_KEY environment variable is set on the server
-    (create a key at https://build.nvidia.com under the model's "Get API Key").
+    Set the NVIDIA_API_KEY environment variable on Vercel (Project Settings ->
+    Environment Variables) — never hardcode it in source, and rotate it immediately
+    if it's ever pasted into a chat, doc, or public repo by mistake.
   -->
   <style>
     :root{--safe-bottom:env(safe-area-inset-bottom,0px)}*{-webkit-tap-highlight-color:transparent}html,body{height:100%;background:#080b14}body{overflow:hidden}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:#34405a;border-radius:9px}.no-scrollbar::-webkit-scrollbar{display:none}
